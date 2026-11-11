@@ -1,0 +1,101 @@
+/* index.css — all the styles for the app (dark theme). */
+
+/* Basic page setup: dark background, light text, no extra margins. */
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: #0f172a;
+  color: #e2e8f0;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  overflow-x: hidden; /* never scroll sideways */
+}
+
+/* The whole app: sidebar and content side by side, filling the screen. */
+.app {
+  display: flex;
+  height: 100vh;
+}
+
+/* ---------- Sidebar ---------- */
+.sidebar {
+  width: 220px;
+  flex-shrink: 0; /* keep the sidebar at 220px */
+  height: 100vh;
+  background: #111827;
+  padding: 20px 12px;
+}
+
+.sidebar-title {
+  margin: 0 0 4px 8px;
+  font-size: 22px;
+}
+
+.sidebar-subtitle {
+  margin: 0 0 24px 8px;
+  font-size: 13px;
+  color: #94a3b8;
+}
+
+.sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.nav-link {
+  display: block;
+  padding: 10px 12px;
+  border-radius: 6px;
+  color: #e2e8f0;
+  text-decoration: none;
+}
+
+.nav-link:hover {
+  background: #1f2937;
+}
+
+/* The link for the page that is currently open. */
+.nav-link.active {
+  background: #1e3a5f;
+}
+
+/* ---------- Page content (right side) ---------- */
+.content {
+  flex: 1;
+  min-width: 0; /* lets the editor shrink instead of causing sideways scroll */
+  padding: 24px;
+  overflow-y: auto;
+}
+
+.content h2 {
+  margin-top: 0;
+}
+
+/* Row above the editor holding the title and the Run button. */
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.toolbar h2 {
+  margin: 0;
+}
+
+.run-button {
+  background: #1f8a8a;
+  color: #ffffff;
+  border: none;
+  border-radius: 6px;
+  padding: 8px 20px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.run-button:hover {
+  opacity: 0.9;
+}
