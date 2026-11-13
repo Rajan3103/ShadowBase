@@ -10,69 +10,88 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
-import jakarta.persistence.ManyToMany;
 import jakarta.persistence.ManyToOne;
-import lombok.Data;
+import jakarta.persistence.Table;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
+import lombok.ToString;
+import lombok.EqualsAndHashCode;
 
 @Entity
-@Data
+@Table(name = "containers")
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
+@ToString(exclude = {"sandbox", "dataSource"})
+@EqualsAndHashCode(exclude = {"sandbox", "dataSource"})
 public class Container {
-   @Id
-   private String id;
 
-    @ManyToOne()
+    @Id
+    private String id;
+
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "sandbox_id", referencedColumnName = "id")
     private Sandbox sandbox;
 
+    @Column(name = "image_name")
     private String imageName;
 
     private String host;
 
     private Integer port;
 
-private String jdbcUrl;
+    @Column(name = "jdbc_url", length = 1024)
+    private String jdbcUrl;
 
-private String username;
+    private String username;
 
-private String password;
+    private String password;
 
+    @Column(name = "credential_reference")
+    private String credentialReference;
 
-      @ManyToOne
-    @JoinColumn(name = "data_source_id",referencedColumnName = "id")
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "data_source_id", referencedColumnName = "id")
     private DataSource dataSource;
 
+    @Column(name = "database_name")
     private String databaseName;
-
 
     @Enumerated(EnumType.STRING)
     @Column(name = "database_type")
     private DatabaseType databaseType;
 
-
     @Enumerated(EnumType.STRING)
-    @Column(name = "status",nullable = false)
+    @Column(name = "status", nullable = false)
     private ContainerStatus status;
 
-   @CreationTimestamp
-   @Column(name="created_at",nullable = false)
+    @CreationTimestamp
+    @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
     @UpdateTimestamp
     @Column(name = "updated_at")
     private LocalDateTime updatedAt;
 
-    @Column(name = "expires_at",nullable=true)
+    @Column(name = "expires_at", nullable = true)
     private LocalDateTime expiresAt;
 
-    @Column(name = "stopped_at",nullable = true)
+    @Column(name = "stopped_at", nullable = true)
     private LocalDateTime stoppedAt;
 
-    public enum DatabaseType{
-        MYSQL,POSTGRESQL
+    public enum DatabaseType {
+        MYSQL, POSTGRESQL
     }
-    public enum ContainerStatus{
-        CREATED,RUNNING,STOPPED,FAILED
+
+    public enum ContainerStatus {
+        CREATING, STARTING, RUNNING, UNHEALTHY, STOPPING, STOPPED, FAILED, REMOVED
     }
 }

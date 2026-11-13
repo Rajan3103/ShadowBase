@@ -12,6 +12,11 @@ import com.shadowbase.backend.Entity.Sandbox;
 @Repository
 public interface SandboxRepository extends JpaRepository<Sandbox, UUID> {
 
-Optional<Sandbox> findById(UUID id);
-List<Sandbox> findByName(String name);
+    Optional<Sandbox> findById(UUID id);
+
+    List<Sandbox> findByName(String name);
+
+    List<Sandbox> findByUserId(UUID userId);
+
+    List<Sandbox> findByStatus(Sandbox.SandboxStatus status);
 }

@@ -15,17 +15,20 @@ import com.shadowbase.backend.Repository.SandboxRepository;
 
 @Service
 public class SanboxService {
-    @Autowired
-    private PostgresContainerService postgresContainerService;
 
-    @Autowired
-    private SandboxRepository sandboxRepository;
+    private final PostgresContainerService postgresContainerService;
+    private final SandboxRepository sandboxRepository;
+
+    public SanboxService(PostgresContainerService postgresContainerService, SandboxRepository sandboxRepository) {
+        this.postgresContainerService = postgresContainerService;
+        this.sandboxRepository = sandboxRepository;
+    }
 
     public Sandbox createSandbox(String sandboxName, User user) {
         Sandbox sandbox = new Sandbox();
         sandbox.setName(sandboxName);
         sandbox.setUser(user);
-        sandbox.setStatus(SandboxStatus.CREATED);
+        sandbox.setStatus(SandboxStatus.CREATING);
 
         return sandboxRepository.save(sandbox);
     }
@@ -34,7 +37,16 @@ public class SanboxService {
     public Container addPostgresContainer(UUID sandboxId, String databaseName, String userName, String password) {
         Sandbox sandbox = sandboxRepository.findById(sandboxId)
             .orElseThrow(() -> new IllegalArgumentException("Sandbox not found with id: " + sandboxId));
-        Container containerObject = postgresContainerService.createContainer(sandbox, databaseName, userName, password);
+
+        com.shadowbase.backend.Dto.CreateContainerRequest request = com.shadowbase.backend.Dto.CreateContainerRequest.builder()
+                .sandboxId(sandboxId)
+                .databaseType(Container.DatabaseType.POSTGRESQL)
+                .databaseName(databaseName)
+                .username(userName)
+                .password(password)
+                .build();
+
+        Container containerObject = postgresContainerService.createContainer(sandbox, request);
 
         if (sandbox.getContainers() == null) {
             sandbox.setContainers(new ArrayList<>());

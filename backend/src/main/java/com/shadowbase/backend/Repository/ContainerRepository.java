@@ -9,8 +9,15 @@ import org.springframework.stereotype.Repository;
 import com.shadowbase.backend.Entity.Container;
 
 @Repository
-public interface ContainerRepository extends JpaRepository<Container,String> {
+public interface ContainerRepository extends JpaRepository<Container, String> {
 
-Optional<Container> findById(String id);
-List<Container> findBySandboxId(UUID sandboxId);
+    Optional<Container> findById(String id);
+
+    List<Container> findBySandboxId(UUID sandboxId);
+
+    Optional<Container> findByIdAndSandboxId(String id, UUID sandboxId);
+
+    List<Container> findByStatus(Container.ContainerStatus status);
+
+    List<Container> findByStatusIn(java.util.Collection<Container.ContainerStatus> statuses);
 }
