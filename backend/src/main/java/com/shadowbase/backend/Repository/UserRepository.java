@@ -5,14 +5,14 @@ import java.util.Optional;
 import java.util.UUID;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.stereotype.Repository;
 
 import com.shadowbase.backend.Entity.User;
 
-public  interface UserRepository extends JpaRepository{
+@Repository
+public interface UserRepository extends JpaRepository<User, UUID> {
 
-Optional<User> findById(UUID id);
+    Optional<User> findById(UUID id);
 
-List<User> findByUserName(String userName);
-
-
+    Optional<User> findByEmailId(String emailId);
 }

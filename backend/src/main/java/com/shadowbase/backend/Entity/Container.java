@@ -8,6 +8,8 @@ import org.hibernate.annotations.UpdateTimestamp;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToMany;
@@ -44,10 +46,12 @@ private String password;
     private String databaseName;
 
 
+    @Enumerated(EnumType.STRING)
     @Column(name = "database_type")
     private DatabaseType databaseType;
 
 
+    @Enumerated(EnumType.STRING)
     @Column(name = "status",nullable = false)
     private ContainerStatus status;
 
@@ -56,7 +60,7 @@ private String password;
     private LocalDateTime createdAt;
 
     @UpdateTimestamp
-    @Column(name = "created_at")
+    @Column(name = "updated_at")
     private LocalDateTime updatedAt;
 
     @Column(name = "expires_at",nullable=true)
@@ -65,7 +69,7 @@ private String password;
     @Column(name = "stopped_at",nullable = true)
     private LocalDateTime stoppedAt;
 
-    private enum DatabaseType{
+    public enum DatabaseType{
         MYSQL,POSTGRESQL
     }
     public enum ContainerStatus{

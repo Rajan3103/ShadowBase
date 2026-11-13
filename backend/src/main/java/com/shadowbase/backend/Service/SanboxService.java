@@ -1,8 +1,11 @@
 package com.shadowbase.backend.Service;
 
+import java.util.ArrayList;
 import java.util.UUID;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import com.shadowbase.backend.Entity.Container;
 import com.shadowbase.backend.Entity.Sandbox;
@@ -10,26 +13,34 @@ import com.shadowbase.backend.Entity.Sandbox.SandboxStatus;
 import com.shadowbase.backend.Entity.User;
 import com.shadowbase.backend.Repository.SandboxRepository;
 
+@Service
 public class SanboxService {
     @Autowired
-    PostgresContainerService postgresContainerService;
+    private PostgresContainerService postgresContainerService;
 
     @Autowired
-    SandboxRepository sandboxRepository;
-    Sandbox createSandbox(String sandboxName,User user){
+    private SandboxRepository sandboxRepository;
+
+    public Sandbox createSandbox(String sandboxName, User user) {
         Sandbox sandbox = new Sandbox();
         sandbox.setName(sandboxName);
         sandbox.setUser(user);
         sandbox.setStatus(SandboxStatus.CREATED);
 
-        return sandbox;
+        return sandboxRepository.save(sandbox);
     }
 
-    void addPostgresContainer(UUID sandboxId,String databaseName,String userName,String password){
-        Sandbox sandbox = sandboxRepository.findById(sandboxId).orElse(null);
-  Container containerObject = postgresContainerService.createContainer(sandbox,databaseName, userName, password);
+    @Transactional
+    public Container addPostgresContainer(UUID sandboxId, String databaseName, String userName, String password) {
+        Sandbox sandbox = sandboxRepository.findById(sandboxId)
+            .orElseThrow(() -> new IllegalArgumentException("Sandbox not found with id: " + sandboxId));
+        Container containerObject = postgresContainerService.createContainer(sandbox, databaseName, userName, password);
 
+        if (sandbox.getContainers() == null) {
+            sandbox.setContainers(new ArrayList<>());
+        }
+        sandbox.getContainers().add(containerObject);
 
-  sandbox.getContainers().add(containerObject);
+        return containerObject;
     }
 }
