@@ -1,4 +1,4 @@
-package com.shadowbase.backend.Entities;
+package com.shadowbase.backend.Entity;
 
 import java.time.LocalDateTime;
 import java.util.UUID;

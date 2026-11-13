@@ -1,52 +1,62 @@
-package com.shadowbase.backend.Entities;
+package com.shadowbase.backend.Entity;
 
 import java.time.LocalDateTime;
 import java.util.UUID;
+
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
+
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToMany;
 import jakarta.persistence.ManyToOne;
-import jakarta.persistence.Table;
 import lombok.Data;
 
+@Entity
 @Data
-@Entity 
-@Table(name="sandbox")
-public class Sandbox {
-    //this class holds the sandbox details and is having foreign keys to datasource,user
-    //and container.
+public class Container {
+   @Id
+   private String id;
 
-    private UUID id;
+    @ManyToOne()
+    @JoinColumn(name = "sandbox_id", referencedColumnName = "id")
+    private Sandbox sandbox;
 
-    @Column(name="sandbox_name",nullable = false)
-    private String sandboxName;
+    private String imageName;
 
-    @ManyToOne
+    private String host;
+
+    private Integer port;
+
+private String jdbcUrl;
+
+private String username;
+
+private String password;
+
+
+      @ManyToOne
     @JoinColumn(name = "data_source_id",referencedColumnName = "id")
     private DataSource dataSource;
 
-    @ManyToOne
-    @JoinColumn(name="user_id",referencedColumnName = "id")
-    private User user;
+    private String databaseName;
 
-    @ManyToOne
-    @JoinColumn(name="container_id",referencedColumnName = "id")
-    private Container container;
 
     @Column(name = "database_type")
     private DatabaseType databaseType;
 
 
     @Column(name = "status",nullable = false)
-    private Status status;
+    private ContainerStatus status;
 
    @CreationTimestamp
-   @Column(nullable = false)
+   @Column(name="created_at",nullable = false)
     private LocalDateTime createdAt;
 
     @UpdateTimestamp
+    @Column(name = "created_at")
     private LocalDateTime updatedAt;
 
     @Column(name = "expires_at",nullable=true)
@@ -58,8 +68,7 @@ public class Sandbox {
     private enum DatabaseType{
         MYSQL,POSTGRESQL
     }
-
-    private enum Status{
+    public enum ContainerStatus{
         CREATED,RUNNING,STOPPED,FAILED
     }
 }

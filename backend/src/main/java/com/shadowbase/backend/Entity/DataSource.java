@@ -1,4 +1,4 @@
-package com.shadowbase.backend.Entities;
+package com.shadowbase.backend.Entity;
 
 import java.time.LocalDateTime;
 import java.util.UUID;
@@ -15,7 +15,7 @@ import jakarta.persistence.Table;
 import lombok.Data;
 
 @Data
-@Entity 
+@Entity
 @Table(name = "data_source")
 public class DataSource {
     // this class holds the source database details
