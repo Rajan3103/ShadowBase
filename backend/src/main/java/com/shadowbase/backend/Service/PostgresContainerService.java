@@ -19,8 +19,6 @@ import com.github.dockerjava.api.command.InspectContainerResponse;
 import com.github.dockerjava.api.exception.NotFoundException;
 import com.github.dockerjava.api.model.ExposedPort;
 import com.github.dockerjava.api.model.Ports;
-import com.shadowbase.backend.dto.ContainerResponse;
-import com.shadowbase.backend.dto.CreateContainerRequest;
 import com.shadowbase.backend.Entity.Container;
 import com.shadowbase.backend.Entity.Container.ContainerStatus;
 import com.shadowbase.backend.Entity.Container.DatabaseType;
@@ -28,6 +26,8 @@ import com.shadowbase.backend.Entity.Sandbox;
 import com.shadowbase.backend.Exception.ContainerOperationException;
 import com.shadowbase.backend.Exception.ResourceNotFoundException;
 import com.shadowbase.backend.Repository.ContainerRepository;
+import com.shadowbase.backend.dto.ContainerResponse;
+import com.shadowbase.backend.dto.CreateContainerRequest;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -254,10 +254,15 @@ public class PostgresContainerService {
         }
 
         DockerClient client = getDockerClient();
-        List<Container> candidateContainers = containerRepository.findByStatusIn(
-                List.of(ContainerStatus.RUNNING, ContainerStatus.STARTING, ContainerStatus.STOPPING)
+        List<Container> candidateContainers =
+        containerRepository.findByDatabaseTypeAndStatusIn(
+                DatabaseType.POSTGRESQL,
+                List.of(
+                        ContainerStatus.RUNNING,
+                        ContainerStatus.STARTING,
+                        ContainerStatus.STOPPING
+                )
         );
-
         for (Container c : candidateContainers) {
             try {
                 InspectContainerResponse inspect = client.inspectContainerCmd(c.getId()).exec();

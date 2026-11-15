@@ -219,15 +219,14 @@ mvn exec:java
 
 | Method | Endpoint | Description |
 |---|---|---|
-| `POST` | `/api/environments` | Create a new shadow database |
-| `POST` | `/api/environments/{id}/seed` | Load the base schema and sample data |
-| `DELETE` | `/api/environments/{id}` | Destroy the shadow database |
-| `POST` | `/api/environments/{id}/query` | Run a SQL query from the editor |
-| `POST` | `/api/environments/{id}/migration` | Apply a migration script to the shadow database |
-| `POST` | `/api/environments/{id}/replay/start` | Start replaying production traffic |
-| `POST` | `/api/environments/{id}/replay/stop` | Stop replaying traffic |
-| `GET` | `/api/metrics` | Get queries replayed, failures and error rate |
-| `POST` | `/api/analysis` | *(Bonus)* Analyze a migration script with JSqlParser |
+| `POST` | `/api/sandboxes` | Create a sandbox and its initial containers |
+| `GET` | `/api/sandboxes/{id}` | Retrieve a sandbox and its containers |
+| `GET` | `/api/sandboxes/user/{userId}` | List sandboxes belonging to a user |
+| `POST` | `/api/sandboxes/{id}/start` | Start all containers in a sandbox |
+| `POST` | `/api/sandboxes/{id}/stop` | Stop all containers in a sandbox |
+| `DELETE` | `/api/sandboxes/{id}` | Delete a sandbox and its containers |
+| `POST` | `/api/sandboxes/{id}/containers` | Add a MySQL or PostgreSQL container |
+| `GET` | `/api/sandboxes/{id}/containers` | List all containers in a sandbox |
 
 **WebSocket** — connect to `/ws`, then subscribe to:
 - `/topic/metrics` — live counters (queries replayed, error rate)
