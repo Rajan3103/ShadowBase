@@ -3,20 +3,24 @@ import com.shadowbase.model.ShadowBaseMessage;
 
 public class MessageProcessingService {
 
+    private final SqlReplayService sqlReplayService;
 
-        public void process(ShadowBaseMessage message) {
+    public MessageProcessingService() {
+        sqlReplayService = new SqlReplayService();
+    }
 
-            System.out.println("\n----- Message Received -----");
+    public void process(ShadowBaseMessage message) {
 
-            System.out.println("ID        : " + message.getId());
+        System.out.println("\n----- Message Received -----");
 
-            System.out.println("Operation  : " + message.getOperation());
+        System.out.println("ID        : " + message.getId());
+        System.out.println("Operation : " + message.getOperation());
+        System.out.println("Table     : " + message.getTable());
+        System.out.println("Data      : " + message.getData());
 
-            System.out.println("Table      : " + message.getTable());
+        System.out.println("----------------------------");
 
-            System.out.println("Data       : " + message.getData());
-
-            System.out.println("----------------------------");
-        }
+        sqlReplayService.replay(message);
+    }
 }
 
