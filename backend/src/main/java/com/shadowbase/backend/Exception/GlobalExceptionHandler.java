@@ -27,6 +27,15 @@ public class GlobalExceptionHandler {
         return buildResponse(HttpStatus.BAD_REQUEST, ex.getMessage());
     }
 
+    @ExceptionHandler(SchemaImportException.class)
+    public ResponseEntity<Map<String, Object>> handleSchemaImport(SchemaImportException ex) {
+        HttpStatus status = HttpStatus.BAD_REQUEST;
+        if (ex.getMessage() != null && ex.getMessage().contains("already in progress")) {
+            status = HttpStatus.CONFLICT;
+        }
+        return buildResponse(status, ex.getMessage());
+    }
+
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<Map<String, Object>> handleBadRequest(IllegalArgumentException ex) {
         return buildResponse(HttpStatus.BAD_REQUEST, ex.getMessage());
