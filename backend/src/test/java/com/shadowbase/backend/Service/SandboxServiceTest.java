@@ -1,28 +1,23 @@
-package com.shadowbase.backend.Service;
-
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+package com.shadowbase.backend.service;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import static org.mockito.ArgumentMatchers.any;
 import org.mockito.Mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import com.shadowbase.backend.Dto.ContainerResponse;
-import com.shadowbase.backend.Dto.CreateContainerRequest;
-import com.shadowbase.backend.Dto.CreateSandboxRequest;
-import com.shadowbase.backend.Dto.SandboxResponse;
 import com.shadowbase.backend.Entity.Container;
 import com.shadowbase.backend.Entity.Container.ContainerStatus;
 import com.shadowbase.backend.Entity.Container.DatabaseType;
@@ -35,6 +30,10 @@ import com.shadowbase.backend.Exception.SandboxOperationException;
 import com.shadowbase.backend.Repository.DatasourceRepository;
 import com.shadowbase.backend.Repository.SandboxRepository;
 import com.shadowbase.backend.Repository.UserRepository;
+import com.shadowbase.backend.dto.ContainerResponse;
+import com.shadowbase.backend.dto.CreateContainerRequest;
+import com.shadowbase.backend.dto.CreateSandboxRequest;
+import com.shadowbase.backend.dto.SandboxResponse;
 
 @ExtendWith(MockitoExtension.class)
 class SandboxServiceTest {
@@ -46,6 +45,9 @@ class SandboxServiceTest {
     private PostgresContainerService postgresContainerService;
 
     @Mock
+private MySQLContainerService mySQLContainerService;
+
+    @Mock
     private UserRepository userRepository;
 
     @Mock
@@ -54,14 +56,15 @@ class SandboxServiceTest {
     private SandboxService sandboxService;
 
     @BeforeEach
-    void setUp() {
-        sandboxService = new SandboxServiceImpl(
-                sandboxRepository,
-                postgresContainerService,
-                userRepository,
-                datasourceRepository
-        );
-    }
+void setUp() {
+    sandboxService = new SandboxServiceImpl(
+            sandboxRepository,
+            postgresContainerService,
+            mySQLContainerService,
+            userRepository,
+            datasourceRepository
+    );
+}
 
     @Test
     void testCreateSandbox_SuccessWithContainer() {

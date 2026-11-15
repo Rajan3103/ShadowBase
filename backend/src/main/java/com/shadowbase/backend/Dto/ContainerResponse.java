@@ -1,4 +1,4 @@
-package com.shadowbase.backend.Dto;
+package com.shadowbase.backend.dto;
 
 import java.time.LocalDateTime;
 import java.util.UUID;

@@ -1,4 +1,4 @@
-package com.shadowbase.backend.Service;
+package com.shadowbase.backend.service;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -19,8 +19,6 @@ import com.github.dockerjava.api.command.InspectContainerResponse;
 import com.github.dockerjava.api.exception.NotFoundException;
 import com.github.dockerjava.api.model.ExposedPort;
 import com.github.dockerjava.api.model.Ports;
-import com.shadowbase.backend.Dto.ContainerResponse;
-import com.shadowbase.backend.Dto.CreateContainerRequest;
 import com.shadowbase.backend.Entity.Container;
 import com.shadowbase.backend.Entity.Container.ContainerStatus;
 import com.shadowbase.backend.Entity.Container.DatabaseType;
@@ -28,6 +26,8 @@ import com.shadowbase.backend.Entity.Sandbox;
 import com.shadowbase.backend.Exception.ContainerOperationException;
 import com.shadowbase.backend.Exception.ResourceNotFoundException;
 import com.shadowbase.backend.Repository.ContainerRepository;
+import com.shadowbase.backend.dto.ContainerResponse;
+import com.shadowbase.backend.dto.CreateContainerRequest;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -57,19 +57,19 @@ public class PostgresContainerService {
         DatabaseType databaseType = DatabaseType.POSTGRESQL;
 
         String dbName = (request.getDatabaseName() != null && !request.getDatabaseName().isBlank())
-                ? request.getDatabaseName() 
+                ? request.getDatabaseName()
                 : "shadowbase_db";
 
         String username = (request.getUsername() != null && !request.getUsername().isBlank())
-                ? request.getUsername() 
+                ? request.getUsername()
                 : "shadowuser";
 
         String password = (request.getPassword() != null && !request.getPassword().isBlank())
-                ? request.getPassword() 
+                ? request.getPassword()
                 : "shadowpass";
 
         String imageName = (request.getImageName() != null && !request.getImageName().isBlank())
-                ? request.getImageName() 
+                ? request.getImageName()
                 : "postgres:16-alpine";
 
         PostgreSQLContainer containerInstance = new PostgreSQLContainer(DockerImageName.parse(imageName))
@@ -77,13 +77,13 @@ public class PostgresContainerService {
                 .withUsername(username)
                 .withPassword(password);
 
-        log.info("Starting PostgreSQL container (image: {}) for sandbox {}...", 
+        log.info("Starting PostgreSQL container (image: {}) for sandbox {}...",
                 containerInstance.getDockerImageName(), sandbox != null ? sandbox.getId() : "none");
 
         try {
             containerInstance.start();
         } catch (Exception e) {
-            log.error("Failed to start PostgreSQL container for sandbox {}: {}", 
+            log.error("Failed to start PostgreSQL container for sandbox {}: {}",
                     sandbox != null ? sandbox.getId() : "none", e.getMessage(), e);
             try {
                 containerInstance.stop();
@@ -113,7 +113,7 @@ public class PostgresContainerService {
         String jdbcUrl = containerInstance.getJdbcUrl();
         String actualImage = containerInstance.getDockerImageName();
 
-        log.info("PostgreSQL container started successfully. ID: {}, Port: {}, JDBC URL: {}", 
+        log.info("PostgreSQL container started successfully. ID: {}, Port: {}, JDBC URL: {}",
                 containerId, port, jdbcUrl);
 
         Container container = Container.builder()
@@ -254,10 +254,15 @@ public class PostgresContainerService {
         }
 
         DockerClient client = getDockerClient();
-        List<Container> candidateContainers = containerRepository.findByStatusIn(
-                List.of(ContainerStatus.RUNNING, ContainerStatus.STARTING, ContainerStatus.STOPPING)
+        List<Container> candidateContainers =
+        containerRepository.findByDatabaseTypeAndStatusIn(
+                DatabaseType.POSTGRESQL,
+                List.of(
+                        ContainerStatus.RUNNING,
+                        ContainerStatus.STARTING,
+                        ContainerStatus.STOPPING
+                )
         );
-
         for (Container c : candidateContainers) {
             try {
                 InspectContainerResponse inspect = client.inspectContainerCmd(c.getId()).exec();

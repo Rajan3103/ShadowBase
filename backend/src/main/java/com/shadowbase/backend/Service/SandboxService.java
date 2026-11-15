@@ -1,12 +1,12 @@
-package com.shadowbase.backend.Service;
+package com.shadowbase.backend.service;
 
 import java.util.List;
 import java.util.UUID;
 
-import com.shadowbase.backend.Dto.ContainerResponse;
-import com.shadowbase.backend.Dto.CreateContainerRequest;
-import com.shadowbase.backend.Dto.CreateSandboxRequest;
-import com.shadowbase.backend.Dto.SandboxResponse;
+import com.shadowbase.backend.dto.ContainerResponse;
+import com.shadowbase.backend.dto.CreateContainerRequest;
+import com.shadowbase.backend.dto.CreateSandboxRequest;
+import com.shadowbase.backend.dto.SandboxResponse;
 import com.shadowbase.backend.Entity.Sandbox;
 
 public interface SandboxService {

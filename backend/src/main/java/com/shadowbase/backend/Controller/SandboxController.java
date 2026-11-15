@@ -1,4 +1,5 @@
-package com.shadowbase.backend.Controller;
+
+package com.shadowbase.backend.controller;
 
 import java.util.List;
 import java.util.UUID;
@@ -13,12 +14,11 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import com.shadowbase.backend.Dto.ContainerResponse;
-import com.shadowbase.backend.Dto.CreateContainerRequest;
-import com.shadowbase.backend.Dto.CreateSandboxRequest;
-import com.shadowbase.backend.Dto.SandboxResponse;
-import com.shadowbase.backend.Service.PostgresContainerService;
-import com.shadowbase.backend.Service.SandboxService;
+import com.shadowbase.backend.dto.ContainerResponse;
+import com.shadowbase.backend.dto.CreateContainerRequest;
+import com.shadowbase.backend.dto.CreateSandboxRequest;
+import com.shadowbase.backend.dto.SandboxResponse;
+import com.shadowbase.backend.service.SandboxService;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -28,46 +28,62 @@ import lombok.extern.slf4j.Slf4j;
 public class SandboxController {
 
     private final SandboxService sandboxService;
-    private final PostgresContainerService postgresContainerService;
 
-    public SandboxController(SandboxService sandboxService, PostgresContainerService postgresContainerService) {
+    public SandboxController(SandboxService sandboxService) {
         this.sandboxService = sandboxService;
-        this.postgresContainerService = postgresContainerService;
     }
 
     @PostMapping
-    public ResponseEntity<SandboxResponse> createSandbox(@RequestBody CreateSandboxRequest request) {
+    public ResponseEntity<SandboxResponse> createSandbox(
+            @RequestBody CreateSandboxRequest request) {
+
         log.info("REST request to create sandbox: {}", request.getName());
+
         SandboxResponse response = sandboxService.createSandbox(request);
+
         return new ResponseEntity<>(response, HttpStatus.CREATED);
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<SandboxResponse> getSandbox(@PathVariable("id") UUID id) {
+    public ResponseEntity<SandboxResponse> getSandbox(
+            @PathVariable("id") UUID id) {
+
         return ResponseEntity.ok(sandboxService.getSandbox(id));
     }
 
     @GetMapping("/user/{userId}")
-    public ResponseEntity<List<SandboxResponse>> listSandboxesByUser(@PathVariable("userId") UUID userId) {
+    public ResponseEntity<List<SandboxResponse>> listSandboxesByUser(
+            @PathVariable("userId") UUID userId) {
+
         return ResponseEntity.ok(sandboxService.listSandboxesByUser(userId));
     }
 
     @PostMapping("/{id}/start")
-    public ResponseEntity<SandboxResponse> startSandbox(@PathVariable("id") UUID id) {
+    public ResponseEntity<SandboxResponse> startSandbox(
+            @PathVariable("id") UUID id) {
+
         log.info("REST request to start sandbox: {}", id);
+
         return ResponseEntity.ok(sandboxService.startSandbox(id));
     }
 
     @PostMapping("/{id}/stop")
-    public ResponseEntity<SandboxResponse> stopSandbox(@PathVariable("id") UUID id) {
+    public ResponseEntity<SandboxResponse> stopSandbox(
+            @PathVariable("id") UUID id) {
+
         log.info("REST request to stop sandbox: {}", id);
+
         return ResponseEntity.ok(sandboxService.stopSandbox(id));
     }
 
     @DeleteMapping("/{id}")
-    public ResponseEntity<Void> deleteSandbox(@PathVariable("id") UUID id) {
+    public ResponseEntity<Void> deleteSandbox(
+            @PathVariable("id") UUID id) {
+
         log.info("REST request to delete sandbox: {}", id);
+
         sandboxService.deleteSandbox(id);
+
         return ResponseEntity.noContent().build();
     }
 
@@ -75,13 +91,21 @@ public class SandboxController {
     public ResponseEntity<ContainerResponse> addContainer(
             @PathVariable("id") UUID id,
             @RequestBody CreateContainerRequest request) {
+
         log.info("REST request to add container to sandbox: {}", id);
-        ContainerResponse response = sandboxService.addContainerToSandbox(id, request);
+
+        ContainerResponse response =
+                sandboxService.addContainerToSandbox(id, request);
+
         return new ResponseEntity<>(response, HttpStatus.CREATED);
     }
 
     @GetMapping("/{id}/containers")
-    public ResponseEntity<List<ContainerResponse>> getContainers(@PathVariable("id") UUID id) {
-        return ResponseEntity.ok(postgresContainerService.getContainerResponsesBySandbox(id));
+    public ResponseEntity<List<ContainerResponse>> getContainers(
+            @PathVariable("id") UUID id) {
+
+        return ResponseEntity.ok(
+                sandboxService.getSandbox(id).getContainers()
+        );
     }
 }

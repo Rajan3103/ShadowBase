@@ -1,4 +1,4 @@
-package com.shadowbase.backend.Dto;
+package com.shadowbase.backend.dto;
 
 import java.util.ArrayList;
 import java.util.List;

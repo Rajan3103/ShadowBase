@@ -1,4 +1,4 @@
-package com.shadowbase.backend.Service;
+package com.shadowbase.backend.service;
 
 import java.util.ArrayList;
 import java.util.UUID;
@@ -38,7 +38,7 @@ public class SanboxService {
         Sandbox sandbox = sandboxRepository.findById(sandboxId)
             .orElseThrow(() -> new IllegalArgumentException("Sandbox not found with id: " + sandboxId));
 
-        com.shadowbase.backend.Dto.CreateContainerRequest request = com.shadowbase.backend.Dto.CreateContainerRequest.builder()
+        com.shadowbase.backend.dto.CreateContainerRequest request = com.shadowbase.backend.dto.CreateContainerRequest.builder()
                 .sandboxId(sandboxId)
                 .databaseType(Container.DatabaseType.POSTGRESQL)
                 .databaseName(databaseName)
