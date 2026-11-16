@@ -36,6 +36,16 @@ public class GlobalExceptionHandler {
         return buildResponse(status, ex.getMessage());
     }
 
+    @ExceptionHandler(DataSeedingException.class)
+    public ResponseEntity<Map<String, Object>> handleDataSeeding(DataSeedingException ex) {
+        HttpStatus status = HttpStatus.BAD_REQUEST;
+        if (ex.getMessage() != null && (ex.getMessage().contains("already in progress")
+                || ex.getMessage().contains("already active"))) {
+            status = HttpStatus.CONFLICT;
+        }
+        return buildResponse(status, ex.getMessage());
+    }
+
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<Map<String, Object>> handleBadRequest(IllegalArgumentException ex) {
         return buildResponse(HttpStatus.BAD_REQUEST, ex.getMessage());

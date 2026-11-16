@@ -76,6 +76,12 @@ public class DataSource {
     private String databaseUsername;
 
     /**
+     * Database password for source database access. Stored securely and never exposed via API response DTOs.
+     */
+    @Column(name = "database_password")
+    private String databasePassword;
+
+    /**
      * Reference key or vault alias pointing to secure storage for the database password.
      */
     @Column(name = "credential_reference")
