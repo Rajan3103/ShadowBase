@@ -1,34 +1,12 @@
 // EditorPage.jsx — the SQL editor page.
 // It puts together the SqlEditor (top) and the ResultsTable (bottom).
-// Clicking Run sends the SQL to a fake (mock) function and shows what comes back.
-// Later the mock will be replaced by POST /api/environments/{id}/query on the backend.
+// Clicking Run sends the SQL to runQuery() from our API service and shows what comes back.
 import { useState } from 'react'
 import SqlEditor from '../components/SqlEditor.jsx'
 import ResultsTable from '../components/ResultsTable.jsx'
+import { runQuery, getErrorMessage } from '../services/api.js'
 
 const DEFAULT_SQL = '-- Write your migration script here\nSELECT * FROM customers;'
-
-// Mock "backend": waits 500 ms, then returns fake data.
-// If the SQL contains the word DROP (any case), it returns an error instead.
-// (Tomorrow this moves to its own API service file.)
-function mockRunQuery(sql) {
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      if (/\bdrop\b/i.test(sql)) {
-        resolve({ error: 'ERROR: column "email" does not exist (mock)' })
-      } else {
-        resolve({
-          columns: ['id', 'name', 'email'],
-          rows: [
-            [1, 'Asha', 'asha@example.com'],
-            [2, 'Ravi', 'ravi@example.com'],
-            [3, 'Meena', 'meena@example.com'],
-          ],
-        })
-      }
-    }, 500)
-  })
-}
 
 function EditorPage() {
   // The values this page remembers between renders:
@@ -42,18 +20,20 @@ function EditorPage() {
     setIsRunning(true)
     setError(null)
 
-    const result = await mockRunQuery(sql)
-
-    if (result.error) {
-      setError(result.error)
-      setColumns([])
-      setRows([])
-    } else {
+    try {
+      // Success: show the returned columns and rows.
+      const result = await runQuery(sql)
       setColumns(result.columns)
       setRows(result.rows)
+    } catch (err) {
+      // Failure: clear the table and show the error message.
+      setError(getErrorMessage(err))
+      setColumns([])
+      setRows([])
+    } finally {
+      // Runs in both cases: re-enable the Run button.
+      setIsRunning(false)
     }
-
-    setIsRunning(false)
   }
 
   return (
