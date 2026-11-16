@@ -5,13 +5,18 @@ import com.shadowbase.model.ShadowBaseMessage;
 /**
  * Service that processes and outputs received ShadowBase messages.
  * <p>
- * In production replay scenarios, this service executes or replicates incoming SQL
- * operations against target shadow database instances.
+ * Replays incoming SQL operations against target shadow database instances.
  */
 public class MessageProcessingService {
 
+    private final SqlReplayService sqlReplayService;
+
+    public MessageProcessingService() {
+        this.sqlReplayService = new SqlReplayService();
+    }
+
     /**
-     * Processes a single received database change event message.
+     * Processes a single received database change event message and replays the SQL.
      *
      * @param message the received {@link ShadowBaseMessage} to process
      */
@@ -22,6 +27,7 @@ public class MessageProcessingService {
         System.out.println("Table     : " + message.getTable());
         System.out.println("Data      : " + message.getData());
         System.out.println("----------------------------");
+
+        sqlReplayService.replay(message);
     }
 }
-

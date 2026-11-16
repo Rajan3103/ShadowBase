@@ -11,14 +11,14 @@ public class ProducerMain {
     public static void main(String[] args) {
         KafkaProducerService producer = new KafkaProducerService();
 
-        ShadowBaseMessage message = new ShadowBaseMessage(
+        ShadowBaseMessage insertMessage = new ShadowBaseMessage(
                 101,
                 "INSERT",
                 "student",
-                "name=Rohan, age=20"
+                "'Rohan', 20"
         );
 
-        producer.sendMessage(message);
+        producer.sendMessage(insertMessage);
         producer.close();
     }
 }
