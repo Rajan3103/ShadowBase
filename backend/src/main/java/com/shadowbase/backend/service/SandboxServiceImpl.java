@@ -1,4 +1,3 @@
-
 package com.shadowbase.backend.service;
 
 import java.util.ArrayList;
@@ -12,13 +11,12 @@ import org.springframework.transaction.annotation.Transactional;
 import com.shadowbase.backend.Entity.Container;
 import com.shadowbase.backend.Entity.Container.ContainerStatus;
 import com.shadowbase.backend.Entity.Container.DatabaseType;
-import com.shadowbase.backend.Entity.DataSource;
 import com.shadowbase.backend.Entity.Sandbox;
 import com.shadowbase.backend.Entity.Sandbox.SandboxStatus;
+import com.shadowbase.backend.Entity.SchemaStatus;
 import com.shadowbase.backend.Entity.User;
 import com.shadowbase.backend.Exception.ResourceNotFoundException;
 import com.shadowbase.backend.Exception.SandboxOperationException;
-import com.shadowbase.backend.Repository.DatasourceRepository;
 import com.shadowbase.backend.Repository.SandboxRepository;
 import com.shadowbase.backend.Repository.UserRepository;
 import com.shadowbase.backend.dto.ContainerResponse;
@@ -28,6 +26,17 @@ import com.shadowbase.backend.dto.SandboxResponse;
 
 import lombok.extern.slf4j.Slf4j;
 
+/**
+ * Implementation of {@link SandboxService} responsible for managing multi-container
+ * sandbox environments and coordinating their underlying database containers.
+ * <p>
+ * Key design principles:
+ * <ul>
+ *   <li>Delegates container lifecycle management to {@link PostgresContainerService} and {@link MySQLContainerService}.</li>
+ *   <li>Calculates Sandbox readiness dynamically from the state of its associated containers.</li>
+ *   <li>Preserves metadata on sandbox destruction for auditability without leaving orphaned Docker resources.</li>
+ * </ul>
+ */
 @Slf4j
 @Service
 public class SandboxServiceImpl implements SandboxService {
@@ -36,90 +45,75 @@ public class SandboxServiceImpl implements SandboxService {
     private final PostgresContainerService postgresContainerService;
     private final MySQLContainerService mySQLContainerService;
     private final UserRepository userRepository;
-    private final DatasourceRepository datasourceRepository;
 
+    /**
+     * Constructor injection for all service and repository dependencies.
+     */
     public SandboxServiceImpl(
             SandboxRepository sandboxRepository,
             PostgresContainerService postgresContainerService,
             MySQLContainerService mySQLContainerService,
-            UserRepository userRepository,
-            DatasourceRepository datasourceRepository) {
+            UserRepository userRepository) {
 
         this.sandboxRepository = sandboxRepository;
         this.postgresContainerService = postgresContainerService;
         this.mySQLContainerService = mySQLContainerService;
         this.userRepository = userRepository;
-        this.datasourceRepository = datasourceRepository;
     }
 
+    /**
+     * {@inheritDoc}
+     */
     @Override
     @Transactional
     public SandboxResponse createSandbox(CreateSandboxRequest request) {
 
-        log.info("Creating new sandbox '{}' for userId {}",
-                request.getName(), request.getUserId());
+        log.info("Creating new sandbox '{}' for userId {}", request.getName(), request.getUserId());
 
         if (request.getName() == null || request.getName().isBlank()) {
             throw new IllegalArgumentException("Sandbox name must not be empty");
         }
 
+        // Validate user if userId is provided
         User user = null;
-
         if (request.getUserId() != null) {
             user = userRepository.findById(request.getUserId())
                     .orElseThrow(() -> new ResourceNotFoundException(
                             "User not found with ID: " + request.getUserId()));
         }
 
-        List<DataSource> dataSources = new ArrayList<>();
-
-        if (request.getDataSourceIds() != null
-                && !request.getDataSourceIds().isEmpty()) {
-            dataSources = datasourceRepository.findAllById(
-                    request.getDataSourceIds());
-        }
-
+        // Initialize sandbox in CREATING status with schema NOT_INITIALIZED
         Sandbox sandbox = Sandbox.builder()
                 .name(request.getName())
                 .user(user)
-                .dataSources(dataSources)
                 .status(SandboxStatus.CREATING)
+                .schemaStatus(SchemaStatus.NOT_INITIALIZED)
                 .containers(new ArrayList<>())
                 .build();
 
         sandbox = sandboxRepository.save(sandbox);
+        log.info("Sandbox '{}' persisted with ID: {} and status: CREATING", sandbox.getName(), sandbox.getId());
 
-        log.info("Sandbox '{}' persisted with ID: {}",
-                sandbox.getName(), sandbox.getId());
+        // Provision initial containers if requested
+        if (request.getInitialContainers() != null && !request.getInitialContainers().isEmpty()) {
 
-        if (request.getInitialContainers() != null
-                && !request.getInitialContainers().isEmpty()) {
-
-            for (CreateContainerRequest containerReq
-                    : request.getInitialContainers()) {
-
+            for (CreateContainerRequest containerReq : request.getInitialContainers()) {
                 try {
                     containerReq.setSandboxId(sandbox.getId());
-
-                    Container createdContainer =
-                            createContainer(sandbox, containerReq);
-
+                    Container createdContainer = createContainer(sandbox, containerReq);
                     sandbox.getContainers().add(createdContainer);
 
                 } catch (Exception e) {
-                    log.error(
-                            "Failed to provision container for sandbox {}: {}",
-                            sandbox.getId(), e.getMessage(), e);
-
+                    log.error("Failed to provision container for sandbox {}: {}", sandbox.getId(), e.getMessage(), e);
                     sandbox.setStatus(SandboxStatus.FAILED);
                     sandboxRepository.save(sandbox);
 
                     throw new SandboxOperationException(
-                            "Sandbox container provisioning failed: "
-                                    + e.getMessage(), e);
+                            "Sandbox container provisioning failed: " + e.getMessage(), e);
                 }
             }
 
+            // Derive readiness based on container health
             updateSandboxReadiness(sandbox);
 
         } else {
@@ -127,26 +121,28 @@ public class SandboxServiceImpl implements SandboxService {
         }
 
         sandbox = sandboxRepository.save(sandbox);
-
         return mapToResponse(sandbox);
     }
 
+    /**
+     * {@inheritDoc}
+     */
     @Override
     @Transactional(readOnly = true)
     public SandboxResponse getSandbox(UUID sandboxId) {
-
         Sandbox sandbox = findSandboxById(sandboxId);
-
         return mapToResponse(sandbox);
     }
 
+    /**
+     * {@inheritDoc}
+     */
     @Override
     @Transactional(readOnly = true)
     public List<SandboxResponse> listSandboxesByUser(UUID userId) {
 
         if (!userRepository.existsById(userId)) {
-            throw new ResourceNotFoundException(
-                    "User not found with ID: " + userId);
+            throw new ResourceNotFoundException("User not found with ID: " + userId);
         }
 
         return sandboxRepository.findByUserId(userId)
@@ -155,6 +151,9 @@ public class SandboxServiceImpl implements SandboxService {
                 .collect(Collectors.toList());
     }
 
+    /**
+     * {@inheritDoc}
+     */
     @Override
     @Transactional
     public SandboxResponse startSandbox(UUID sandboxId) {
@@ -162,112 +161,98 @@ public class SandboxServiceImpl implements SandboxService {
         Sandbox sandbox = findSandboxById(sandboxId);
 
         if (sandbox.getStatus() == SandboxStatus.DESTROYED) {
-            throw new SandboxOperationException(
-                    "Cannot start destroyed sandbox: " + sandboxId);
+            throw new SandboxOperationException("Cannot start destroyed sandbox: " + sandboxId);
         }
 
-        log.info("Starting sandbox {} and its associated containers...",
-                sandboxId);
-
+        log.info("Starting sandbox {} and its associated containers...", sandboxId);
         sandbox.setStatus(SandboxStatus.STARTING);
         sandboxRepository.save(sandbox);
 
         List<Container> containers = sandbox.getContainers();
-
         for (Container container : containers) {
             try {
                 startContainer(container);
             } catch (Exception e) {
-                log.error(
-                        "Failed to start container {} during sandbox start: {}",
+                log.error("Failed to start container {} during sandbox start: {}",
                         container.getId(), e.getMessage(), e);
             }
         }
 
         updateSandboxReadiness(sandbox);
-
         Sandbox saved = sandboxRepository.save(sandbox);
-
         return mapToResponse(saved);
     }
 
+    /**
+     * {@inheritDoc}
+     */
     @Override
     @Transactional
     public SandboxResponse stopSandbox(UUID sandboxId) {
 
         Sandbox sandbox = findSandboxById(sandboxId);
 
-        log.info("Stopping sandbox {} and its associated containers...",
-                sandboxId);
-
+        log.info("Stopping sandbox {} and its associated containers...", sandboxId);
         sandbox.setStatus(SandboxStatus.STOPPING);
         sandboxRepository.save(sandbox);
 
         List<Container> containers = sandbox.getContainers();
-
         for (Container container : containers) {
             try {
                 stopContainer(container);
             } catch (Exception e) {
-                log.error(
-                        "Failed to stop container {} during sandbox stop: {}",
+                log.error("Failed to stop container {} during sandbox stop: {}",
                         container.getId(), e.getMessage(), e);
             }
         }
 
         sandbox.setStatus(SandboxStatus.STOPPED);
-
         Sandbox saved = sandboxRepository.save(sandbox);
-
         return mapToResponse(saved);
     }
 
+    /**
+     * {@inheritDoc}
+     */
     @Override
     @Transactional
     public void deleteSandbox(UUID sandboxId) {
 
         Sandbox sandbox = findSandboxById(sandboxId);
 
-        log.info("Deleting sandbox {} and removing its containers...",
-                sandboxId);
-
+        log.info("Deleting sandbox {} and removing its containers...", sandboxId);
         sandbox.setStatus(SandboxStatus.STOPPING);
         sandboxRepository.save(sandbox);
 
         List<Container> containers = sandbox.getContainers();
-
         for (Container container : containers) {
             try {
                 removeContainer(container);
             } catch (Exception e) {
-                log.error(
-                        "Failed to remove container {} during sandbox deletion: {}",
+                log.error("Failed to remove container {} during sandbox deletion: {}",
                         container.getId(), e.getMessage(), e);
             }
         }
 
         sandbox.setStatus(SandboxStatus.DESTROYED);
         sandboxRepository.save(sandbox);
-
-        log.info("Sandbox {} metadata preserved with status DESTROYED",
-                sandboxId);
+        log.info("Sandbox {} metadata preserved with status DESTROYED", sandboxId);
     }
 
+    /**
+     * {@inheritDoc}
+     */
     @Override
     @Transactional
-    public ContainerResponse addContainerToSandbox(
-            UUID sandboxId,
-            CreateContainerRequest request) {
+    public ContainerResponse addContainerToSandbox(UUID sandboxId, CreateContainerRequest request) {
 
         Sandbox sandbox = findSandboxById(sandboxId);
 
         if (sandbox.getStatus() == SandboxStatus.DESTROYED) {
-            throw new SandboxOperationException(
-                    "Cannot add container to destroyed sandbox: " + sandboxId);
+            throw new SandboxOperationException("Cannot add container to destroyed sandbox: " + sandboxId);
         }
 
         request.setSandboxId(sandboxId);
-
         Container container = createContainer(sandbox, request);
 
         if (sandbox.getContainers() == null) {
@@ -275,13 +260,15 @@ public class SandboxServiceImpl implements SandboxService {
         }
 
         sandbox.getContainers().add(container);
-
         updateSandboxReadiness(sandbox);
         sandboxRepository.save(sandbox);
 
         return mapContainerToResponse(container);
     }
 
+    /**
+     * {@inheritDoc}
+     */
     @Override
     public SandboxResponse mapToResponse(Sandbox sandbox) {
 
@@ -290,7 +277,6 @@ public class SandboxServiceImpl implements SandboxService {
         }
 
         List<ContainerResponse> containerResponses = new ArrayList<>();
-
         if (sandbox.getContainers() != null) {
             containerResponses = sandbox.getContainers()
                     .stream()
@@ -298,22 +284,12 @@ public class SandboxServiceImpl implements SandboxService {
                     .collect(Collectors.toList());
         }
 
-        List<UUID> dataSourceIds = new ArrayList<>();
-
-        if (sandbox.getDataSources() != null) {
-            dataSourceIds = sandbox.getDataSources()
-                    .stream()
-                    .map(DataSource::getId)
-                    .collect(Collectors.toList());
-        }
-
         return SandboxResponse.builder()
                 .id(sandbox.getId())
                 .name(sandbox.getName())
-                .userId(sandbox.getUser() != null
-                        ? sandbox.getUser().getId() : null)
-                .dataSourceIds(dataSourceIds)
+                .userId(sandbox.getUser() != null ? sandbox.getUser().getId() : null)
                 .status(sandbox.getStatus())
+                .schemaStatus(sandbox.getSchemaStatus())
                 .containers(containerResponses)
                 .createdAt(sandbox.getCreatedAt())
                 .updatedAt(sandbox.getUpdatedAt())
@@ -321,22 +297,21 @@ public class SandboxServiceImpl implements SandboxService {
     }
 
     private Sandbox findSandboxById(UUID sandboxId) {
-
         return sandboxRepository.findById(sandboxId)
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "Sandbox not found with ID: " + sandboxId));
     }
 
     private DatabaseType resolveDatabaseType(Container container) {
-
         return container.getDatabaseType() == null
                 ? DatabaseType.POSTGRESQL
                 : container.getDatabaseType();
     }
 
-    private Container createContainer(
-            Sandbox sandbox,
-            CreateContainerRequest request) {
+    /**
+     * Delegates container creation to the corresponding specialized container service based on database type.
+     */
+    private Container createContainer(Sandbox sandbox, CreateContainerRequest request) {
 
         DatabaseType type = request.getDatabaseType() == null
                 ? DatabaseType.POSTGRESQL
@@ -350,7 +325,6 @@ public class SandboxServiceImpl implements SandboxService {
     }
 
     private void startContainer(Container container) {
-
         if (resolveDatabaseType(container) == DatabaseType.MYSQL) {
             mySQLContainerService.startContainer(container.getId());
         } else {
@@ -359,7 +333,6 @@ public class SandboxServiceImpl implements SandboxService {
     }
 
     private void stopContainer(Container container) {
-
         if (resolveDatabaseType(container) == DatabaseType.MYSQL) {
             mySQLContainerService.stopContainer(container.getId());
         } else {
@@ -368,7 +341,6 @@ public class SandboxServiceImpl implements SandboxService {
     }
 
     private void removeContainer(Container container) {
-
         if (resolveDatabaseType(container) == DatabaseType.MYSQL) {
             mySQLContainerService.removeContainer(container.getId());
         } else {
@@ -377,14 +349,21 @@ public class SandboxServiceImpl implements SandboxService {
     }
 
     private ContainerResponse mapContainerToResponse(Container container) {
-
         if (resolveDatabaseType(container) == DatabaseType.MYSQL) {
             return mySQLContainerService.mapToResponse(container);
         }
-
         return postgresContainerService.mapToResponse(container);
     }
 
+    /**
+     * Determines the overall SandboxStatus dynamically based on the status of all associated containers:
+     * <ul>
+     *   <li>READY: all containers are RUNNING.</li>
+     *   <li>DEGRADED: some containers are RUNNING, but others are not.</li>
+     *   <li>FAILED: all containers are FAILED or UNHEALTHY.</li>
+     *   <li>STARTING: default transitional status when containers are spinning up.</li>
+     * </ul>
+     */
     private void updateSandboxReadiness(Sandbox sandbox) {
 
         List<Container> containers = sandbox.getContainers();

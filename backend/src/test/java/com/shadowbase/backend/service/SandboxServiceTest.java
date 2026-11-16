@@ -21,13 +21,11 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import com.shadowbase.backend.Entity.Container;
 import com.shadowbase.backend.Entity.Container.ContainerStatus;
 import com.shadowbase.backend.Entity.Container.DatabaseType;
-import com.shadowbase.backend.Entity.DataSource;
 import com.shadowbase.backend.Entity.Sandbox;
 import com.shadowbase.backend.Entity.Sandbox.SandboxStatus;
 import com.shadowbase.backend.Entity.User;
 import com.shadowbase.backend.Exception.ResourceNotFoundException;
 import com.shadowbase.backend.Exception.SandboxOperationException;
-import com.shadowbase.backend.Repository.DatasourceRepository;
 import com.shadowbase.backend.Repository.SandboxRepository;
 import com.shadowbase.backend.Repository.UserRepository;
 import com.shadowbase.backend.dto.ContainerResponse;
@@ -50,21 +48,17 @@ private MySQLContainerService mySQLContainerService;
     @Mock
     private UserRepository userRepository;
 
-    @Mock
-    private DatasourceRepository datasourceRepository;
-
     private SandboxService sandboxService;
 
     @BeforeEach
-void setUp() {
-    sandboxService = new SandboxServiceImpl(
-            sandboxRepository,
-            postgresContainerService,
-            mySQLContainerService,
-            userRepository,
-            datasourceRepository
-    );
-}
+    void setUp() {
+        sandboxService = new SandboxServiceImpl(
+                sandboxRepository,
+                postgresContainerService,
+                mySQLContainerService,
+                userRepository
+        );
+    }
 
     @Test
     void testCreateSandbox_SuccessWithContainer() {
@@ -215,20 +209,12 @@ void setUp() {
     }
 
     @Test
-    void testCreateSandbox_WithMultipleDataSources() {
+    void testCreateSandbox_InitializesSchemaStatusToNotInitialized() {
         UUID userId = UUID.randomUUID();
         User mockUser = new User();
         mockUser.setId(userId);
         when(userRepository.findById(userId)).thenReturn(Optional.of(mockUser));
 
-        UUID ds1 = UUID.randomUUID();
-        UUID ds2 = UUID.randomUUID();
-        DataSource d1 = new DataSource();
-        d1.setId(ds1);
-        DataSource d2 = new DataSource();
-        d2.setId(ds2);
-
-        when(datasourceRepository.findAllById(List.of(ds1, ds2))).thenReturn(List.of(d1, d2));
         when(sandboxRepository.save(any(Sandbox.class))).thenAnswer(i -> {
             Sandbox s = i.getArgument(0);
             if (s.getId() == null) {
@@ -238,14 +224,14 @@ void setUp() {
         });
 
         CreateSandboxRequest req = CreateSandboxRequest.builder()
-                .name("Multi-DB Sandbox")
+                .name("Schema Status Sandbox")
                 .userId(userId)
-                .dataSourceIds(List.of(ds1, ds2))
                 .build();
 
         SandboxResponse response = sandboxService.createSandbox(req);
 
         assertNotNull(response);
-        assertEquals(2, response.getDataSourceIds().size());
+        assertEquals("Schema Status Sandbox", response.getName());
+        assertEquals(com.shadowbase.backend.Entity.SchemaStatus.NOT_INITIALIZED, response.getSchemaStatus());
     }
 }

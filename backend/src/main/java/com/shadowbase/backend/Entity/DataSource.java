@@ -11,41 +11,95 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.OneToOne;
 import jakarta.persistence.Table;
-import lombok.Data;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.EqualsAndHashCode;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
+import lombok.ToString;
 
-@Data
+/**
+ * JPA entity representing an external source database connection configuration.
+ * <p>
+ * A DataSource configuration is linked exclusively to the single database {@link Container}
+ * provisioned to run or shadow it. A DataSource is completely independent of Sandbox.
+ */
 @Entity
 @Table(name = "data_source")
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
+@ToString(exclude = "container")
+@EqualsAndHashCode(exclude = "container")
 public class DataSource {
-    // this class holds the source database details
-@Id
-@GeneratedValue(strategy=GenerationType.UUID)
-private UUID id;
 
-@Column(name="connection_name",nullable=false)
-private String connectionName;
+    /**
+     * Unique identifier for the DataSource configuration.
+     */
+    @Id
+    @GeneratedValue(strategy = GenerationType.UUID)
+    private UUID id;
 
-@Column(name="host",nullable=false)
-private String host;
+    /**
+     * Logical display name for this data source connection.
+     */
+    @Column(name = "connection_name", nullable = false)
+    private String connectionName;
 
-@Column(name="port",nullable = false)
-private Integer port;
+    /**
+     * Hostname or IP address of the source database server.
+     */
+    @Column(name = "host", nullable = false)
+    private String host;
 
-@Column(name="database_name",nullable = false)
-private String databaseName;
+    /**
+     * Port number where the source database is reachable.
+     */
+    @Column(name = "port", nullable = false)
+    private Integer port;
 
-@Column(name="database_username",nullable = false)
-private String databaseUsername;
+    /**
+     * Logical database name on the source server.
+     */
+    @Column(name = "database_name", nullable = false)
+    private String databaseName;
 
-@Column(name="credential_reference")
-private String credentialReference;
+    /**
+     * Database user account for connecting to the source.
+     */
+    @Column(name = "database_username", nullable = false)
+    private String databaseUsername;
 
-@CreationTimestamp
-@Column(nullable=false)
-private LocalDateTime createdAt;
+    /**
+     * Reference key or vault alias pointing to secure storage for the database password.
+     */
+    @Column(name = "credential_reference")
+    private String credentialReference;
 
-@UpdateTimestamp
-private LocalDateTime updatedAt;
+    /**
+     * The single database container running this data source.
+     * Each container hosts exactly one database, and a DataSource is linked
+     * exclusively to only this container (completely independent of Sandbox).
+     */
+    @OneToOne(mappedBy = "dataSource")
+    private Container container;
+
+    /**
+     * Timestamp when this data source record was created.
+     */
+    @CreationTimestamp
+    @Column(nullable = false, updatable = false)
+    private LocalDateTime createdAt;
+
+    /**
+     * Timestamp when this data source record was last modified.
+     */
+    @UpdateTimestamp
+    private LocalDateTime updatedAt;
 
 }
