@@ -226,3 +226,183 @@ body {
   font-size: 13px;
   color: #4ade80;
 }
+
+/* ---------- Sandboxes page ---------- */
+
+/* Name input + Create button on one line. */
+.create-form {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.create-form .text-input {
+  flex: 1;
+  min-width: 0;
+  max-width: 320px;
+}
+
+/* Info box (e.g. "No user ID is set"). */
+.notice {
+  padding: 12px 16px;
+  background: #111827;
+  border: 1px solid #334155;
+  border-radius: 6px;
+}
+
+.notice a {
+  color: #1f8a8a;
+}
+
+/* Cards side by side; each at least 420px wide, or one column on narrow screens. */
+.sandbox-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 420px), 1fr));
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.sandbox-card {
+  min-width: 0; /* lets the containers table scroll instead of stretching the card */
+  padding: 16px;
+  background: #111827;
+  border: 1px solid #1f2937;
+  border-radius: 8px;
+}
+
+/* The active sandbox gets a teal border. */
+.sandbox-card.active {
+  border-color: #1f8a8a;
+}
+
+.card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.card-header h3 {
+  margin: 0;
+  font-size: 17px;
+  overflow-wrap: anywhere;
+}
+
+.card-badges {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.card-meta {
+  margin: 4px 0 12px;
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.card-empty {
+  margin: 0;
+  font-size: 13px;
+  color: #94a3b8;
+}
+
+/* Red error box inside a card or under the form. */
+.card-error {
+  margin-bottom: 12px;
+  padding: 8px 12px;
+  background: #3b1219;
+  border: 1px solid #ef4444;
+  border-radius: 6px;
+  color: #fca5a5;
+  font-size: 13px;
+}
+
+/* "Delete this sandbox?" row. */
+.confirm-box {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding: 8px 12px;
+  background: #1e293b;
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.sandbox-card code {
+  font-size: 12px;
+  color: #cbd5e1;
+}
+
+/* ---------- Small buttons ---------- */
+.small-button {
+  padding: 4px 10px;
+  background: #1e293b;
+  color: #e2e8f0;
+  border: 1px solid #334155;
+  border-radius: 5px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.small-button:hover:not(:disabled) {
+  border-color: #1f8a8a;
+}
+
+.small-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Red button for Delete. */
+.small-button.danger {
+  color: #fca5a5;
+  border-color: #7f1d1d;
+}
+
+.small-button.danger:hover:not(:disabled) {
+  border-color: #ef4444;
+}
+
+/* ---------- Status badges ---------- */
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+}
+
+.badge-green {
+  background: #14532d;
+  color: #86efac;
+}
+
+.badge-amber {
+  background: #78350f;
+  color: #fcd34d;
+}
+
+.badge-grey {
+  background: #334155;
+  color: #cbd5e1;
+}
+
+.badge-red {
+  background: #7f1d1d;
+  color: #fca5a5;
+}
+
+.badge-active {
+  background: #1f8a8a;
+  color: #ffffff;
+}

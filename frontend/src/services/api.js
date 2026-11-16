@@ -12,6 +12,7 @@ const http = axios.create({ baseURL: '' })
 // Keys used to save settings in the browser (the Settings page writes them).
 export const USE_MOCK_KEY = 'shadowbase.useMock'
 export const USER_ID_KEY = 'shadowbase.userId'
+export const CURRENT_SANDBOX_KEY = 'shadowbase.currentSandboxId'
 
 // Returns true when we should use fake data. If the setting was never saved, mock is ON.
 // localStorage can throw (e.g. in private mode), so we wrap it in try/catch.
@@ -92,7 +93,8 @@ function makeMockContainer(sandboxId, request, status) {
 
 // Our fake "database" of sandboxes. It lives as long as the page is open
 // (refreshing the browser resets it). It starts with one example sandbox.
-const DEMO_USER_ID = '00000000-0000-0000-0000-000000000001'
+// Exported so pages can show the demo sandbox in mock mode when no user ID is saved.
+export const DEMO_USER_ID = '00000000-0000-0000-0000-000000000001'
 const DEMO_SANDBOX_ID = crypto.randomUUID()
 const mockSandboxes = [
   {

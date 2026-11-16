@@ -3,6 +3,7 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
 import Sidebar from './components/Sidebar.jsx'
 import EditorPage from './pages/EditorPage.jsx'
+import SandboxesPage from './pages/SandboxesPage.jsx'
 import DashboardPage from './pages/DashboardPage.jsx'
 import SettingsPage from './pages/SettingsPage.jsx'
 
@@ -15,6 +16,7 @@ function App() {
           {/* Visiting "/" sends the user to "/editor" */}
           <Route path="/" element={<Navigate to="/editor" replace />} />
           <Route path="/editor" element={<EditorPage />} />
+          <Route path="/sandboxes" element={<SandboxesPage />} />
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/settings" element={<SettingsPage />} />
         </Routes>
