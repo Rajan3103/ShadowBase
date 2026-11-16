@@ -96,6 +96,78 @@ body {
   cursor: pointer;
 }
 
-.run-button:hover {
+.run-button:hover:not(:disabled) {
   opacity: 0.9;
+}
+
+/* Greyed-out look while a query is running. */
+.run-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ---------- Query results (below the editor) ---------- */
+.results,
+.results-empty,
+.results-error {
+  margin-top: 16px;
+}
+
+/* Shown before any query has been run. */
+.results-empty {
+  padding: 16px;
+  border: 1px dashed #334155;
+  border-radius: 6px;
+  color: #94a3b8;
+}
+
+/* Red box for query errors. */
+.results-error {
+  padding: 12px 16px;
+  background: #3b1219;
+  border: 1px solid #ef4444;
+  border-radius: 6px;
+  color: #fca5a5;
+  font-family: Consolas, 'Courier New', monospace;
+}
+
+/* "3 rows" text above the table. */
+.results-count {
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: #94a3b8;
+}
+
+/* Scrolls the table inside this box if it is too tall or too wide. */
+.results-scroll {
+  max-height: 30vh;
+  overflow: auto;
+  border: 1px solid #1f2937;
+  border-radius: 6px;
+}
+
+.results-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.results-table th,
+.results-table td {
+  padding: 8px 12px;
+  text-align: left;
+  white-space: nowrap;
+  border-bottom: 1px solid #1f2937;
+}
+
+/* Header row stays visible while scrolling down. */
+.results-table th {
+  position: sticky;
+  top: 0;
+  background: #111827;
+  color: #1f8a8a;
+}
+
+.results-table tbody tr:hover {
+  background: #1e293b;
 }
