@@ -171,3 +171,58 @@ body {
 .results-table tbody tr:hover {
   background: #1e293b;
 }
+
+/* ---------- Settings page ---------- */
+.settings {
+  max-width: 480px;
+}
+
+/* Checkbox and its text on one line. */
+.settings-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 20px;
+  cursor: pointer;
+}
+
+.settings-checkbox input {
+  width: 16px;
+  height: 16px;
+  accent-color: #1f8a8a;
+}
+
+/* Label above its text box. */
+.settings-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.text-input {
+  padding: 8px 10px;
+  background: #111827;
+  color: #e2e8f0;
+  border: 1px solid #334155;
+  border-radius: 6px;
+  font-size: 14px;
+  font-family: Consolas, 'Courier New', monospace;
+}
+
+.text-input:focus {
+  outline: none;
+  border-color: #1f8a8a;
+}
+
+.settings-note {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: #94a3b8;
+}
+
+/* Small green "Saved" message. */
+.saved-message {
+  margin-top: 16px;
+  font-size: 13px;
+  color: #4ade80;
+}
