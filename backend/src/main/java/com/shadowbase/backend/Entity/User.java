@@ -13,27 +13,46 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import lombok.Data;
 
+/**
+ * JPA entity representing a user account in ShadowBase.
+ * <p>
+ * Holds user authentication and identity credentials, and acts as the owner
+ * for provisioned sandboxes and data source connections.
+ */
 @Entity
 @Data
 @Table(name = "users")
 public class User {
-    //basic user fields have introduced and furthur fields will be added based on
-    // requirements
 
+    /**
+     * Primary unique identifier for the user account.
+     */
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
-    @Column(name = "email_id",nullable = false,unique = true)
+    /**
+     * Unique email address used as username/login identifier.
+     */
+    @Column(name = "email_id", nullable = false, unique = true)
     private String emailId;
 
-    @Column(name = "password",nullable  = false)
+    /**
+     * Hashed user account password.
+     */
+    @Column(name = "password", nullable = false)
     private String password;
 
+    /**
+     * Timestamp when the user account was registered.
+     */
     @CreationTimestamp
     @Column(nullable = false)
     private LocalDateTime createAt;
 
+    /**
+     * Timestamp when the user account details were last updated.
+     */
     @UpdateTimestamp
     @Column(nullable = true)
     private LocalDateTime updatedAt;
