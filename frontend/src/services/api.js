@@ -39,9 +39,15 @@ function wait(ms) {
 
 const MOCK_DELAY = 400
 
-// The current time as text, like the backend sends it: "2026-11-16T10:30:00.000Z".
+// The current time as text, like the backend sends it: "2026-11-16T10:30:00.000"
+// (Java's LocalDateTime has no "Z" at the end, so we remove it).
 function now() {
-  return new Date().toISOString()
+  return new Date().toISOString().slice(0, -1)
+}
+
+// A fake Docker container ID (64 hex characters), like Testcontainers returns.
+function fakeDockerId() {
+  return crypto.randomUUID().replaceAll('-', '') + crypto.randomUUID().replaceAll('-', '')
 }
 
 // Makes an error that looks like a real axios error from the backend,
@@ -62,9 +68,9 @@ function makeMockContainer(sandboxId, request, status) {
   const isPostgres = request.databaseType === 'POSTGRESQL'
   const port = 49152 + Math.floor(Math.random() * 10000) // random port, like Testcontainers
   return {
-    id: crypto.randomUUID(),
+    id: fakeDockerId(), // the backend uses the Docker container ID (text), not a UUID
     sandboxId,
-    imageName: isPostgres ? 'postgres:16-alpine' : 'mysql:8.0',
+    imageName: isPostgres ? 'postgres:16-alpine' : 'mysql:8.4', // same default images as the backend
     host: 'localhost',
     port,
     jdbcUrl: isPostgres
@@ -74,6 +80,13 @@ function makeMockContainer(sandboxId, request, status) {
     databaseName: request.databaseName,
     databaseType: request.databaseType,
     status,
+    schemaStatus: 'NOT_INITIALIZED', // NOT_INITIALIZED | IN_PROGRESS | SUCCESS | FAILED
+    credentialReference: null,
+    dataSourceId: null,
+    createdAt: now(),
+    updatedAt: now(),
+    expiresAt: null,
+    stoppedAt: status === 'STOPPED' ? now() : null,
   }
 }
 
@@ -87,6 +100,7 @@ const mockSandboxes = [
     name: 'demo-sandbox',
     userId: DEMO_USER_ID,
     status: 'READY',
+    schemaStatus: 'NOT_INITIALIZED',
     containers: [
       makeMockContainer(
         DEMO_SANDBOX_ID,
@@ -103,9 +117,16 @@ const mockSandboxes = [
 function findMockSandbox(id) {
   const sandbox = mockSandboxes.find((s) => s.id === id)
   if (!sandbox) {
-    throw mockError(404, `Sandbox not found: ${id}`)
+    throw mockError(404, `Sandbox not found with ID: ${id}`)
   }
   return sandbox
+}
+
+// The backend refuses to start (or add containers to) a deleted sandbox with a 400 error.
+function rejectIfDestroyed(sandbox, action) {
+  if (sandbox.status === 'DESTROYED') {
+    throw mockError(400, `Cannot ${action} destroyed sandbox: ${sandbox.id}`)
+  }
 }
 
 // ---------- Sandbox endpoints ----------
@@ -119,6 +140,7 @@ export async function createSandbox(name, userId) {
       name,
       userId,
       status: 'READY',
+      schemaStatus: 'NOT_INITIALIZED',
       containers: [],
       createdAt: now(),
       updatedAt: now(),
@@ -155,8 +177,13 @@ export async function startSandbox(id) {
   if (isMockMode()) {
     await wait(MOCK_DELAY)
     const sandbox = findMockSandbox(id)
+    rejectIfDestroyed(sandbox, 'start')
     sandbox.status = 'READY'
-    sandbox.containers.forEach((c) => (c.status = 'RUNNING'))
+    sandbox.containers.forEach((c) => {
+      c.status = 'RUNNING'
+      c.stoppedAt = null
+      c.updatedAt = now()
+    })
     sandbox.updatedAt = now()
     return copy(sandbox)
   }
@@ -170,7 +197,11 @@ export async function stopSandbox(id) {
     await wait(MOCK_DELAY)
     const sandbox = findMockSandbox(id)
     sandbox.status = 'STOPPED'
-    sandbox.containers.forEach((c) => (c.status = 'STOPPED'))
+    sandbox.containers.forEach((c) => {
+      c.status = 'STOPPED'
+      c.stoppedAt = now()
+      c.updatedAt = now()
+    })
     sandbox.updatedAt = now()
     return copy(sandbox)
   }
@@ -179,11 +210,18 @@ export async function stopSandbox(id) {
 }
 
 // DELETE /api/sandboxes/{id} — delete a sandbox. The backend returns nothing (204).
+// Note: the backend keeps the sandbox record with status DESTROYED (it still shows up
+// in lists), and marks its containers REMOVED. The mock does the same.
 export async function deleteSandbox(id) {
   if (isMockMode()) {
     await wait(MOCK_DELAY)
     const sandbox = findMockSandbox(id)
-    mockSandboxes.splice(mockSandboxes.indexOf(sandbox), 1)
+    sandbox.status = 'DESTROYED'
+    sandbox.containers.forEach((c) => {
+      c.status = 'REMOVED'
+      c.updatedAt = now()
+    })
+    sandbox.updatedAt = now()
     return
   }
   await http.delete(`/api/sandboxes/${id}`)
@@ -197,6 +235,7 @@ export async function addContainer(sandboxId, containerRequest) {
   if (isMockMode()) {
     await wait(MOCK_DELAY)
     const sandbox = findMockSandbox(sandboxId)
+    rejectIfDestroyed(sandbox, 'add container to')
     // A new container runs only if its sandbox is running.
     const status = sandbox.status === 'READY' ? 'RUNNING' : 'STOPPED'
     const container = makeMockContainer(sandboxId, containerRequest, status)
