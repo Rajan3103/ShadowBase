@@ -1,4 +1,4 @@
-package com.shadowbase;
+package com.shadowbase.main;
 
 
 
