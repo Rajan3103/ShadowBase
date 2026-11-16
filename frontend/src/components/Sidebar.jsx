@@ -6,6 +6,7 @@ import { NavLink } from 'react-router-dom'
 // The links shown in the sidebar: where they go and what they say.
 const links = [
   { to: '/editor', label: 'SQL Editor' },
+  { to: '/sandboxes', label: 'Sandboxes' },
   { to: '/dashboard', label: 'Dashboard' },
   { to: '/settings', label: 'Settings' },
 ]
