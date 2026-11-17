@@ -1,7 +1,7 @@
 // SandboxCard.jsx — one card for one sandbox.
 // Shows the sandbox details, its action buttons and a table of its database containers.
 // The card loads its own containers and shows its own errors.
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   startSandbox,
   stopSandbox,
@@ -9,6 +9,8 @@ import {
   getSandbox,
   addContainer,
   getContainers,
+  importSchemaFile,
+  startDataSeed,
   getErrorMessage,
 } from '../services/api.js'
 
@@ -49,8 +51,10 @@ function SandboxCard({ sandbox, isActive, refreshKey, onUpdate, onUseInEditor })
   const [containers, setContainers] = useState([])
   const [busyAction, setBusyAction] = useState(null) // which button is loading, e.g. 'start'
   const [error, setError] = useState(null)
+  const [actionMessage, setActionMessage] = useState(null)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const [copiedId, setCopiedId] = useState(null) // container whose URL was just copied
+  const fileInputRef = useRef(null)
 
   const isDestroyed = sandbox.status === 'DESTROYED'
   const isBusy = busyAction !== null
@@ -115,6 +119,31 @@ function SandboxCard({ sandbox, isActive, refreshKey, onUpdate, onUseInEditor })
     })
   }
 
+  function handleImportSchemaClick() {
+    fileInputRef.current?.click()
+  }
+
+  async function handleSchemaFileChange(event) {
+    const file = event.target.files?.[0]
+    if (!file) return
+    runAction('schema', async () => {
+      const res = await importSchemaFile(sandbox.id, null, file)
+      setActionMessage(`Schema imported: ${res.statementsExecuted || 0} statements executed`)
+      onUpdate(await getSandbox(sandbox.id))
+      await loadContainers()
+    })
+    event.target.value = ''
+  }
+
+  function handleSeedData() {
+    runAction('seed', async () => {
+      const res = await startDataSeed(sandbox.id)
+      setActionMessage(`Data seeding started (Job: ${res.id ? res.id.slice(0, 8) : 'active'})`)
+      onUpdate(await getSandbox(sandbox.id))
+      await loadContainers()
+    })
+  }
+
   // Copies the JDBC URL to the clipboard and shows "Copied!" for 1.5 seconds.
   async function handleCopy(container) {
     try {
@@ -157,6 +186,27 @@ function SandboxCard({ sandbox, isActive, refreshKey, onUpdate, onUseInEditor })
         </button>
         <button
           className="small-button"
+          onClick={handleImportSchemaClick}
+          disabled={isBusy || isDestroyed || containers.length === 0}
+        >
+          {busyAction === 'schema' ? 'Importing...' : 'Import Schema (.sql)'}
+        </button>
+        <input
+          type="file"
+          ref={fileInputRef}
+          style={{ display: 'none' }}
+          accept=".sql"
+          onChange={handleSchemaFileChange}
+        />
+        <button
+          className="small-button"
+          onClick={handleSeedData}
+          disabled={isBusy || isDestroyed || containers.length === 0}
+        >
+          {busyAction === 'seed' ? 'Seeding...' : 'Seed Data'}
+        </button>
+        <button
+          className="small-button"
           onClick={onUseInEditor}
           disabled={isBusy || isDestroyed || isActive}
         >
@@ -184,7 +234,8 @@ function SandboxCard({ sandbox, isActive, refreshKey, onUpdate, onUseInEditor })
         </div>
       )}
 
-      {/* ---- Error message for anything that went wrong in this card ---- */}
+      {/* ---- Error & Success messages inside the card ---- */}
+      {actionMessage && <div className="saved-message" style={{ margin: '8px 0' }}>{actionMessage}</div>}
       {error && <div className="card-error">{error}</div>}
 
       {/* ---- Containers table ---- */}
@@ -200,6 +251,7 @@ function SandboxCard({ sandbox, isActive, refreshKey, onUpdate, onUseInEditor })
                 <th>Host</th>
                 <th>Port</th>
                 <th>Status</th>
+                <th>Schema</th>
                 <th>JDBC URL</th>
               </tr>
             </thead>
@@ -212,6 +264,11 @@ function SandboxCard({ sandbox, isActive, refreshKey, onUpdate, onUseInEditor })
                   <td>{container.port}</td>
                   <td>
                     <span className={badgeClass(container.status)}>{container.status}</span>
+                  </td>
+                  <td>
+                    <span className={badgeClass(container.schemaStatus)}>
+                      {container.schemaStatus || 'NOT_INITIALIZED'}
+                    </span>
                   </td>
                   <td>
                     <code>{container.jdbcUrl}</code>{' '}
