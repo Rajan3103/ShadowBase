@@ -1,0 +1,408 @@
+/* index.css — all the styles for the app (dark theme). */
+
+/* Basic page setup: dark background, light text, no extra margins. */
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: #0f172a;
+  color: #e2e8f0;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  overflow-x: hidden; /* never scroll sideways */
+}
+
+/* The whole app: sidebar and content side by side, filling the screen. */
+.app {
+  display: flex;
+  height: 100vh;
+}
+
+/* ---------- Sidebar ---------- */
+.sidebar {
+  width: 220px;
+  flex-shrink: 0; /* keep the sidebar at 220px */
+  height: 100vh;
+  background: #111827;
+  padding: 20px 12px;
+}
+
+.sidebar-title {
+  margin: 0 0 4px 8px;
+  font-size: 22px;
+}
+
+.sidebar-subtitle {
+  margin: 0 0 24px 8px;
+  font-size: 13px;
+  color: #94a3b8;
+}
+
+.sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.nav-link {
+  display: block;
+  padding: 10px 12px;
+  border-radius: 6px;
+  color: #e2e8f0;
+  text-decoration: none;
+}
+
+.nav-link:hover {
+  background: #1f2937;
+}
+
+/* The link for the page that is currently open. */
+.nav-link.active {
+  background: #1e3a5f;
+}
+
+/* ---------- Page content (right side) ---------- */
+.content {
+  flex: 1;
+  min-width: 0; /* lets the editor shrink instead of causing sideways scroll */
+  padding: 24px;
+  overflow-y: auto;
+}
+
+.content h2 {
+  margin-top: 0;
+}
+
+/* Row above the editor holding the title and the Run button. */
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.toolbar h2 {
+  margin: 0;
+}
+
+.run-button {
+  background: #1f8a8a;
+  color: #ffffff;
+  border: none;
+  border-radius: 6px;
+  padding: 8px 20px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.run-button:hover:not(:disabled) {
+  opacity: 0.9;
+}
+
+/* Greyed-out look while a query is running. */
+.run-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ---------- Query results (below the editor) ---------- */
+.results,
+.results-empty,
+.results-error {
+  margin-top: 16px;
+}
+
+/* Shown before any query has been run. */
+.results-empty {
+  padding: 16px;
+  border: 1px dashed #334155;
+  border-radius: 6px;
+  color: #94a3b8;
+}
+
+/* Red box for query errors. */
+.results-error {
+  padding: 12px 16px;
+  background: #3b1219;
+  border: 1px solid #ef4444;
+  border-radius: 6px;
+  color: #fca5a5;
+  font-family: Consolas, 'Courier New', monospace;
+}
+
+/* "3 rows" text above the table. */
+.results-count {
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: #94a3b8;
+}
+
+/* Scrolls the table inside this box if it is too tall or too wide. */
+.results-scroll {
+  max-height: 30vh;
+  overflow: auto;
+  border: 1px solid #1f2937;
+  border-radius: 6px;
+}
+
+.results-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.results-table th,
+.results-table td {
+  padding: 8px 12px;
+  text-align: left;
+  white-space: nowrap;
+  border-bottom: 1px solid #1f2937;
+}
+
+/* Header row stays visible while scrolling down. */
+.results-table th {
+  position: sticky;
+  top: 0;
+  background: #111827;
+  color: #1f8a8a;
+}
+
+.results-table tbody tr:hover {
+  background: #1e293b;
+}
+
+/* ---------- Settings page ---------- */
+.settings {
+  max-width: 480px;
+}
+
+/* Checkbox and its text on one line. */
+.settings-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 20px;
+  cursor: pointer;
+}
+
+.settings-checkbox input {
+  width: 16px;
+  height: 16px;
+  accent-color: #1f8a8a;
+}
+
+/* Label above its text box. */
+.settings-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.text-input {
+  padding: 8px 10px;
+  background: #111827;
+  color: #e2e8f0;
+  border: 1px solid #334155;
+  border-radius: 6px;
+  font-size: 14px;
+  font-family: Consolas, 'Courier New', monospace;
+}
+
+.text-input:focus {
+  outline: none;
+  border-color: #1f8a8a;
+}
+
+.settings-note {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: #94a3b8;
+}
+
+/* Small green "Saved" message. */
+.saved-message {
+  margin-top: 16px;
+  font-size: 13px;
+  color: #4ade80;
+}
+
+/* ---------- Sandboxes page ---------- */
+
+/* Name input + Create button on one line. */
+.create-form {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.create-form .text-input {
+  flex: 1;
+  min-width: 0;
+  max-width: 320px;
+}
+
+/* Info box (e.g. "No user ID is set"). */
+.notice {
+  padding: 12px 16px;
+  background: #111827;
+  border: 1px solid #334155;
+  border-radius: 6px;
+}
+
+.notice a {
+  color: #1f8a8a;
+}
+
+/* Cards side by side; each at least 420px wide, or one column on narrow screens. */
+.sandbox-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 420px), 1fr));
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.sandbox-card {
+  min-width: 0; /* lets the containers table scroll instead of stretching the card */
+  padding: 16px;
+  background: #111827;
+  border: 1px solid #1f2937;
+  border-radius: 8px;
+}
+
+/* The active sandbox gets a teal border. */
+.sandbox-card.active {
+  border-color: #1f8a8a;
+}
+
+.card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.card-header h3 {
+  margin: 0;
+  font-size: 17px;
+  overflow-wrap: anywhere;
+}
+
+.card-badges {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.card-meta {
+  margin: 4px 0 12px;
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.card-empty {
+  margin: 0;
+  font-size: 13px;
+  color: #94a3b8;
+}
+
+/* Red error box inside a card or under the form. */
+.card-error {
+  margin-bottom: 12px;
+  padding: 8px 12px;
+  background: #3b1219;
+  border: 1px solid #ef4444;
+  border-radius: 6px;
+  color: #fca5a5;
+  font-size: 13px;
+}
+
+/* "Delete this sandbox?" row. */
+.confirm-box {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding: 8px 12px;
+  background: #1e293b;
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.sandbox-card code {
+  font-size: 12px;
+  color: #cbd5e1;
+}
+
+/* ---------- Small buttons ---------- */
+.small-button {
+  padding: 4px 10px;
+  background: #1e293b;
+  color: #e2e8f0;
+  border: 1px solid #334155;
+  border-radius: 5px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.small-button:hover:not(:disabled) {
+  border-color: #1f8a8a;
+}
+
+.small-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Red button for Delete. */
+.small-button.danger {
+  color: #fca5a5;
+  border-color: #7f1d1d;
+}
+
+.small-button.danger:hover:not(:disabled) {
+  border-color: #ef4444;
+}
+
+/* ---------- Status badges ---------- */
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+}
+
+.badge-green {
+  background: #14532d;
+  color: #86efac;
+}
+
+.badge-amber {
+  background: #78350f;
+  color: #fcd34d;
+}
+
+.badge-grey {
+  background: #334155;
+  color: #cbd5e1;
+}
+
+.badge-red {
+  background: #7f1d1d;
+  color: #fca5a5;
+}
+
+.badge-active {
+  background: #1f8a8a;
+  color: #ffffff;
+}

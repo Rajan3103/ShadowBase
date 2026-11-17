@@ -1,4 +1,4 @@
-package com.shadowbase.main;
+package com.shadowbase;
 
 import com.shadowbase.kafka.KafkaProducerService;
 import com.shadowbase.model.ShadowBaseMessage;
@@ -13,7 +13,7 @@ public class ProducerMain {
                         101,
                         "INSERT",
                         "student",
-                        "101, 'Rohan', 20"
+                        "'Rohan', 20"
                 );
 
         producer.sendMessage(insertMessage);
