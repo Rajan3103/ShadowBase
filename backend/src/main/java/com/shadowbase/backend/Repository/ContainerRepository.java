@@ -36,6 +36,15 @@ public interface ContainerRepository extends JpaRepository<Container, String> {
     List<Container> findBySandboxId(UUID sandboxId);
 
     /**
+     * Retrieves all containers belonging to a specific sandbox matching a lifecycle status.
+     *
+     * @param sandboxId UUID of the parent sandbox
+     * @param status    ContainerStatus (e.g. RUNNING)
+     * @return list of matching containers
+     */
+    List<Container> findBySandboxIdAndStatus(UUID sandboxId, ContainerStatus status);
+
+    /**
      * Retrieves a container by both its container ID and its parent sandbox UUID.
      *
      * @param id        Docker container ID

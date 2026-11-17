@@ -46,6 +46,11 @@ public class GlobalExceptionHandler {
         return buildResponse(status, ex.getMessage());
     }
 
+    @ExceptionHandler(SqlQueryException.class)
+    public ResponseEntity<Map<String, Object>> handleSqlQuery(SqlQueryException ex) {
+        return buildResponse(HttpStatus.BAD_REQUEST, ex.getMessage());
+    }
+
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<Map<String, Object>> handleBadRequest(IllegalArgumentException ex) {
         return buildResponse(HttpStatus.BAD_REQUEST, ex.getMessage());
