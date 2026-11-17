@@ -261,20 +261,162 @@ export async function getContainers(sandboxId) {
 
 // ---------- Running SQL ----------
 
-// Runs SQL and returns { columns, rows }.
-// ALWAYS mocked for now — the backend has no "run SQL" endpoint yet.
-// If the SQL contains the word DROP (any case), it throws an error instead.
-export async function runQuery(sql) {
-  await wait(500)
-  if (/\bdrop\b/i.test(sql)) {
-    throw new Error('ERROR: column "email" does not exist (mock)')
+// Runs SQL and returns { columns, rows, rowCount, executionTimeMs, message }.
+// When not in mock mode, executes against the active sandbox container: POST /api/sandboxes/{sandboxId}/query
+export async function runQuery(sql, sandboxId, containerId) {
+  if (isMockMode()) {
+    await wait(500)
+    if (/\bdrop\b/i.test(sql)) {
+      throw new Error('ERROR: column "email" does not exist (mock)')
+    }
+    return {
+      columns: ['id', 'name', 'email'],
+      rows: [
+        [1, 'Asha', 'asha@example.com'],
+        [2, 'Ravi', 'ravi@example.com'],
+        [3, 'Meena', 'meena@example.com'],
+      ],
+      rowCount: 3,
+      executionTimeMs: 14,
+    }
   }
-  return {
-    columns: ['id', 'name', 'email'],
-    rows: [
-      [1, 'Asha', 'asha@example.com'],
-      [2, 'Ravi', 'ravi@example.com'],
-      [3, 'Meena', 'meena@example.com'],
-    ],
+
+  let activeSandboxId = sandboxId
+  if (!activeSandboxId) {
+    try {
+      activeSandboxId = localStorage.getItem(CURRENT_SANDBOX_KEY)
+    } catch {
+      // storage unavailable
+    }
   }
+
+  if (!activeSandboxId) {
+    throw new Error(
+      'No sandbox selected. Please go to the Sandboxes page and click "Use in editor" on an active sandbox.'
+    )
+  }
+
+  const endpoint = containerId
+    ? `/api/sandboxes/${activeSandboxId}/containers/${containerId}/query`
+    : `/api/sandboxes/${activeSandboxId}/query`
+
+  const response = await http.post(endpoint, {
+    sql,
+    containerId: containerId || null,
+  })
+  return response.data
+}
+
+// ---------- User Management endpoints ----------
+
+// GET /api/users — list all user accounts.
+export async function listUsers() {
+  if (isMockMode()) {
+    return [{ id: DEMO_USER_ID, emailId: 'demo@shadowbase.local', createdAt: now() }]
+  }
+  const response = await http.get('/api/users')
+  return response.data
+}
+
+// POST /api/users — create a new user account.
+export async function createUser(emailId, password) {
+  if (isMockMode()) {
+    return { id: crypto.randomUUID(), emailId, createdAt: now() }
+  }
+  const response = await http.post('/api/users', { emailId, password })
+  return response.data
+}
+
+// GET /api/users/demo — fetch or create the default demo user.
+export async function getDemoUser() {
+  if (isMockMode()) {
+    return { id: DEMO_USER_ID, emailId: 'demo@shadowbase.local', createdAt: now() }
+  }
+  const response = await http.get('/api/users/demo')
+  return response.data
+}
+
+// ---------- Schema Management endpoints ----------
+
+// POST /api/sandboxes/{sandboxId}/schema/import — upload SQL schema file.
+export async function importSchemaFile(sandboxId, containerId, file) {
+  if (isMockMode()) {
+    await wait(MOCK_DELAY)
+    const sandbox = findMockSandbox(sandboxId)
+    sandbox.schemaStatus = 'SUCCESS'
+    sandbox.containers.forEach((c) => {
+      c.schemaStatus = 'SUCCESS'
+    })
+    return {
+      id: crypto.randomUUID(),
+      sandboxId,
+      containerId,
+      fileName: file.name,
+      status: 'SUCCESS',
+      statementsExecuted: 5,
+      executionTimeMs: 120,
+    }
+  }
+
+  const formData = new FormData()
+  formData.append('file', file)
+  if (containerId) {
+    formData.append('containerId', containerId)
+  }
+
+  const endpoint = containerId
+    ? `/api/sandboxes/${sandboxId}/containers/${containerId}/schema/import`
+    : `/api/sandboxes/${sandboxId}/schema/import`
+
+  const response = await http.post(endpoint, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  })
+  return response.data
+}
+
+// GET /api/sandboxes/{sandboxId}/schema/status — get schema status.
+export async function getSchemaStatus(sandboxId, containerId) {
+  if (isMockMode()) {
+    const sandbox = findMockSandbox(sandboxId)
+    return { status: sandbox.schemaStatus || 'NOT_INITIALIZED' }
+  }
+  const endpoint = containerId
+    ? `/api/sandboxes/${sandboxId}/containers/${containerId}/schema/status`
+    : `/api/sandboxes/${sandboxId}/schema/status`
+  const response = await http.get(endpoint)
+  return response.data
+}
+
+// ---------- Data Seeding endpoints ----------
+
+// POST /api/sandboxes/{sandboxId}/data-seeds — start background data seeding.
+export async function startDataSeed(sandboxId, seedRequest = {}) {
+  if (isMockMode()) {
+    await wait(MOCK_DELAY)
+    return {
+      id: crypto.randomUUID(),
+      sandboxId,
+      status: 'QUEUED',
+      totalTables: 2,
+      mode: seedRequest.mode || 'FULL_DATABASE',
+    }
+  }
+  const response = await http.post(`/api/sandboxes/${sandboxId}/data-seeds`, seedRequest)
+  return response.data
+}
+
+// GET /api/sandboxes/{sandboxId}/data-seeds/{jobId} — get seeding job progress.
+export async function getDataSeedJob(sandboxId, jobId) {
+  if (isMockMode()) {
+    return {
+      id: jobId,
+      sandboxId,
+      status: 'SUCCESS',
+      totalTables: 2,
+      completedTables: 2,
+      totalRowsInserted: 150,
+    }
+  }
+  const response = await http.get(`/api/sandboxes/${sandboxId}/data-seeds/${jobId}`)
+  return response.data
 }
