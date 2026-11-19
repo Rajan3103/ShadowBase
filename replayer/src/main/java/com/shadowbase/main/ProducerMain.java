@@ -14,7 +14,7 @@ public class ProducerMain {
                         "INSERT",
                         "student",
                         "'Rohan', 20",
-                        ""
+                        "073a3b7a"
 
                 );
 
