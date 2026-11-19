@@ -406,3 +406,76 @@ body {
   background: #1f8a8a;
   color: #ffffff;
 }
+
+/* ---------- Dashboard page ---------- */
+
+/* Pause / Reset buttons side by side. */
+.toolbar-buttons {
+  display: flex;
+  gap: 8px;
+}
+
+.paused-label {
+  color: #fcd34d;
+}
+
+/* Metric cards: 4 columns on wide screens, 2 on medium, 1 on phones. */
+.metric-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+@media (max-width: 1100px) {
+  .metric-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 640px) {
+  .metric-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.metric-card {
+  padding: 16px;
+  background: #111827;
+  border: 1px solid #1f2937;
+  border-radius: 8px;
+}
+
+.metric-label {
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: #94a3b8;
+}
+
+.metric-value {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 700;
+}
+
+/* Status colours. */
+.status-healthy {
+  color: #4ade80;
+}
+
+.status-warning {
+  color: #fbbf24;
+}
+
+.status-breaking {
+  color: #f87171;
+}
+
+/* Panel holding the error-rate chart. */
+.chart-panel {
+  min-width: 0;
+  padding: 16px;
+  background: #111827;
+  border: 1px solid #1f2937;
+  border-radius: 8px;
+}
