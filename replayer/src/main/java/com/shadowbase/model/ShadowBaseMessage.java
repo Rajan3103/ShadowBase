@@ -7,7 +7,11 @@ public class ShadowBaseMessage {
         private String table;
         private String data;
 
-        public ShadowBaseMessage(){
+
+
+    private String sandboxId;
+
+        public ShadowBaseMessage(int i, String insert, String student, String s, String string){
 
         }
 
@@ -49,6 +53,13 @@ public class ShadowBaseMessage {
         public void setData(String data) {
             this.data = data;
         }
+        public String getSandboxId() {
+            return sandboxId;
+        }
+
+        public void setSandboxId(String sandboxId) {
+            this.sandboxId = sandboxId;
+        }
 
         @Override
         public String toString() {
@@ -57,6 +68,7 @@ public class ShadowBaseMessage {
                     ", operation='" + operation + '\'' +
                     ", table='" + table + '\'' +
                     ", data='" + data + '\'' +
+                    ", sandboxId='" + sandboxId + '\'' +
                     '}';
         }
 }

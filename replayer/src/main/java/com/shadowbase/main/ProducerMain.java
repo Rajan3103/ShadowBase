@@ -13,7 +13,9 @@ public class ProducerMain {
                         101,
                         "INSERT",
                         "student",
-                        "'Rohan', 20"
+                        "'Rohan', 20",
+                        "073a3b7a"
+
                 );
 
         producer.sendMessage(insertMessage);
