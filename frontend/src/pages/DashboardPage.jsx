@@ -14,6 +14,7 @@ import {
   ResponsiveContainer,
 } from 'recharts'
 import { subscribeToMetrics } from '../services/metrics.js'
+import ErrorConsole from '../components/ErrorConsole.jsx'
 import { CURRENT_SANDBOX_KEY } from '../services/api.js'
 
 const MAX_POINTS = 30 // how many updates the chart keeps
@@ -164,6 +165,9 @@ function DashboardPage() {
           </ResponsiveContainer>
         )}
       </div>
+
+      {/* ---- Live SQL errors from replayed traffic (has its own Pause/Clear) ---- */}
+      <ErrorConsole />
     </div>
   )
 }

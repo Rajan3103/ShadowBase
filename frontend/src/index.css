@@ -479,3 +479,108 @@ body {
   border: 1px solid #1f2937;
   border-radius: 8px;
 }
+
+/* ---------- Error console (Dashboard) ---------- */
+.error-console {
+  margin-top: 16px;
+  background: #0b1120; /* a bit darker than the page, like a terminal */
+  border: 1px solid #1f2937;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+/* Toolbar: wraps onto two lines on narrow screens. */
+.console-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: #111827;
+  border-bottom: 1px solid #1f2937;
+}
+
+.console-title {
+  font-weight: 600;
+  font-size: 14px;
+  margin-right: auto; /* pushes the controls to the right */
+}
+
+.console-toolbar .text-input {
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
+.console-filter {
+  width: 220px;
+  max-width: 100%;
+}
+
+.console-count {
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+/* The scrolling log area. */
+.console-body {
+  height: 300px;
+  overflow-y: auto;
+  padding: 8px 12px;
+  font-family: Consolas, 'Courier New', monospace;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.console-empty {
+  color: #64748b;
+}
+
+/* One error per line; long messages wrap under themselves. */
+.console-line {
+  display: flex;
+  gap: 10px;
+}
+
+.console-line:hover {
+  background: #111827;
+}
+
+.console-time {
+  color: #64748b;
+  flex-shrink: 0;
+}
+
+.console-op {
+  width: 52px;
+  flex-shrink: 0;
+  font-weight: 700;
+}
+
+/* A colour for each operation. */
+.op-insert {
+  color: #4ade80;
+}
+
+.op-update {
+  color: #fbbf24;
+}
+
+.op-delete {
+  color: #f87171;
+}
+
+.console-table {
+  color: #7dd3fc;
+  flex-shrink: 0;
+}
+
+.console-state {
+  color: #c084fc;
+  flex-shrink: 0;
+}
+
+.console-message {
+  color: #fca5a5;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
