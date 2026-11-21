@@ -761,3 +761,147 @@ body {
   flex-shrink: 0;
   color: #64748b;
 }
+
+/* ---------- Toolbars wrap on small screens (no sideways scrolling) ---------- */
+.toolbar {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.toolbar-buttons {
+  flex-wrap: wrap;
+}
+
+/* ---------- SQL Editor: second toolbar row (scripts, files, layout) ---------- */
+.script-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  margin-bottom: 12px;
+  padding: 8px 12px;
+  background: #111827;
+  border: 1px solid #1f2937;
+  border-radius: 6px;
+}
+
+/* A few related controls kept together; wraps as a unit. */
+.script-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.script-bar .text-input {
+  padding: 4px 8px;
+  font-size: 12px;
+  max-width: 100%;
+}
+
+.script-name {
+  width: 160px;
+}
+
+/* Green "Saved ✓" (shown for 2 seconds). */
+.saved-tick {
+  font-size: 12px;
+  color: #4ade80;
+}
+
+/* Amber "● Unsaved" label. */
+.unsaved-label {
+  font-size: 12px;
+  color: #fbbf24;
+}
+
+/* Inline warning / confirm panel ("Load anyway", "Delete"). */
+.inline-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding: 8px 12px;
+  background: #2a1f0b;
+  border: 1px solid #b45309;
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+/* ---------- Layout toggle group ---------- */
+
+/* Buttons joined together like one control. */
+.toggle-group {
+  display: inline-flex;
+  flex-wrap: wrap;
+  border: 1px solid #334155;
+  border-radius: 5px;
+  overflow: hidden;
+}
+
+.toggle-button {
+  padding: 4px 10px;
+  background: #1e293b;
+  color: #e2e8f0;
+  border: none;
+  border-right: 1px solid #334155;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.toggle-button:last-child {
+  border-right: none;
+}
+
+.toggle-button:hover {
+  background: #273449;
+}
+
+/* The chosen layout (and Focus mode when on) uses the accent colour. */
+.toggle-button.active,
+.small-button.active {
+  background: #1f8a8a;
+  border-color: #1f8a8a;
+  color: #ffffff;
+}
+
+/* ---------- Editor layouts ---------- */
+
+/* Split (default): editor on top, results below — normal block flow. */
+
+/* Side by side: editor left, results right, 50/50. */
+.editor-main.layout-side {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+/* In side by side, the results start at the top (no gap above them). */
+.layout-side .results-pane > :first-child {
+  margin-top: 0;
+}
+
+/* Let the results table use the editor's full height. */
+.layout-side .results-scroll {
+  max-height: 55vh;
+}
+
+/* Under 900px wide, side by side falls back to stacked. */
+@media (max-width: 900px) {
+  .editor-main.layout-side {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.editor-pane,
+.results-pane {
+  min-width: 0;
+}
+
+/* ---------- Focus mode: hide the sidebar ---------- */
+.app.focus-mode .sidebar {
+  display: none;
+}

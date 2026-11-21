@@ -19,6 +19,7 @@ import { CURRENT_SANDBOX_KEY } from '../services/api.js'
 
 const MAX_POINTS = 30 // how many updates the chart keeps
 const BREAKING_THRESHOLD = 5 // error rate (%) shown as the dashed line
+const SHOW_CONSOLE_KEY = 'shadowbase.showConsole'
 
 // Reads the active sandbox id from localStorage ('' if missing or blocked).
 function readCurrentSandbox() {
@@ -26,6 +27,15 @@ function readCurrentSandbox() {
     return localStorage.getItem(CURRENT_SANDBOX_KEY) || ''
   } catch {
     return ''
+  }
+}
+
+// Whether the error console is shown (on unless it was turned off before).
+function readShowConsole() {
+  try {
+    return localStorage.getItem(SHOW_CONSOLE_KEY) !== 'false'
+  } catch {
+    return true
   }
 }
 
@@ -48,6 +58,7 @@ function DashboardPage() {
   const [isPaused, setIsPaused] = useState(false)
   // Goes up by 1 on Reset; this restarts the subscription from zero.
   const [resetKey, setResetKey] = useState(0)
+  const [showConsole, setShowConsole] = useState(readShowConsole)
 
   // Subscribe to metrics while not paused. React runs the cleanup (unsubscribe) when
   // the page closes, when Pause is clicked, or when Reset restarts it.
@@ -72,6 +83,17 @@ function DashboardPage() {
     setResetKey((key) => key + 1)
   }
 
+  // Show or hide the error console, and remember the choice.
+  function handleToggleConsole() {
+    const next = !showConsole
+    setShowConsole(next)
+    try {
+      localStorage.setItem(SHOW_CONSOLE_KEY, String(next))
+    } catch {
+      // Storage blocked — it just won't be remembered.
+    }
+  }
+
   const status = latest ? getStatus(latest.errorRate) : null
 
   return (
@@ -84,6 +106,9 @@ function DashboardPage() {
           </button>
           <button className="small-button" onClick={handleReset}>
             Reset
+          </button>
+          <button className="small-button" onClick={handleToggleConsole} aria-pressed={showConsole}>
+            Show console: {showConsole ? 'On' : 'Off'}
           </button>
         </div>
       </div>
@@ -167,7 +192,8 @@ function DashboardPage() {
       </div>
 
       {/* ---- Live SQL errors from replayed traffic (has its own Pause/Clear) ---- */}
-      <ErrorConsole />
+      {/* Hiding it removes it from the page, which also stops its subscription. */}
+      {showConsole && <ErrorConsole />}
     </div>
   )
 }

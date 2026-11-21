@@ -8,7 +8,8 @@ import Editor from '@monaco-editor/react'
 //   value    — the SQL text to show
 //   onChange — called with the new text every time the user types
 //   onRun    — (optional) called when the user presses Ctrl+Enter / Cmd+Enter
-function SqlEditor({ value, onChange, onRun }) {
+//   height   — (optional) editor height, e.g. "55vh" (the default) or "75vh"
+function SqlEditor({ value, onChange, onRun, height = '55vh' }) {
   // The shortcut is registered only once (when the editor loads), so we keep the
   // latest onRun in a ref. Otherwise the shortcut would call an old version of it.
   const onRunRef = useRef(onRun)
@@ -27,7 +28,7 @@ function SqlEditor({ value, onChange, onRun }) {
 
   return (
     <Editor
-      height="55vh"
+      height={height}
       language="sql"
       theme="vs-dark"
       value={value}
