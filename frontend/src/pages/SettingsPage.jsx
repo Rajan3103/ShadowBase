@@ -1,5 +1,6 @@
 // SettingsPage.jsx — lets the user switch mock mode on/off and select/create a user ID.
-// Both settings are saved in the browser (localStorage), so they survive a page refresh.
+// It also picks where the Dashboard gets its numbers (mock or live from the backend).
+// All settings are saved in the browser (localStorage), so they survive a page refresh.
 import { useEffect, useState } from 'react'
 import {
   isMockMode,
@@ -11,6 +12,7 @@ import {
   DEMO_USER_ID,
   getErrorMessage,
 } from '../services/api.js'
+import { METRICS_SOURCE_KEY, getMetricsSource } from '../services/metrics.js'
 
 // Reads the saved user ID ('' if none). localStorage can throw, so we use try/catch.
 function loadUserId() {
@@ -34,6 +36,7 @@ function SettingsPage() {
   // Start with the values that were saved before.
   const [useMock, setUseMock] = useState(isMockMode)
   const [userId, setUserId] = useState(loadUserId)
+  const [metricsSource, setMetricsSource] = useState(getMetricsSource) // "mock" | "polling"
   const [users, setUsers] = useState([])
   const [newUserEmail, setNewUserEmail] = useState('')
   const [isCreatingUser, setIsCreatingUser] = useState(false)
@@ -72,6 +75,14 @@ function SettingsPage() {
     const checked = event.target.checked
     setUseMock(checked)
     save(USE_MOCK_KEY, String(checked)) // stored as the text "true" or "false"
+    setSaveCount((count) => count + 1)
+  }
+
+  // The Dashboard reads this setting each time it starts listening for data.
+  function handleMetricsSourceChange(event) {
+    const value = event.target.value
+    setMetricsSource(value)
+    save(METRICS_SOURCE_KEY, value)
     setSaveCount((count) => count + 1)
   }
 
@@ -129,6 +140,18 @@ function SettingsPage() {
         <input type="checkbox" checked={useMock} onChange={handleMockChange} />
         Use mock data (no backend needed)
       </label>
+
+      {/* Where the Dashboard numbers and errors come from */}
+      <div className="settings-block">
+        <label className="settings-field">
+          Dashboard data source
+          <select className="text-input" value={metricsSource} onChange={handleMetricsSourceChange}>
+            <option value="mock">Mock</option>
+            <option value="polling">Live from backend</option>
+          </select>
+        </label>
+        <p className="settings-note">Live mode needs GET /api/metrics on the backend.</p>
+      </div>
 
       {/* Available users dropdown */}
       {users.length > 0 && (
