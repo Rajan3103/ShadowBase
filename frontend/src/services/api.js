@@ -146,6 +146,21 @@ const mockHeapSnapshots = {
   },
 }
 
+// Mock store for registered DataSources
+const mockDataSources = [
+  {
+    id: '11111111-2222-3333-4444-555555555555',
+    connectionName: 'production-postgres-replica',
+    host: 'db-replica.internal.net',
+    port: 5432,
+    databaseName: 'shop_prod',
+    databaseUsername: 'readonly_user',
+    containerId: null,
+    createdAt: now(),
+    updatedAt: now(),
+  },
+]
+
 // Finds a mock sandbox by id, or throws a 404 like the backend would.
 function findMockSandbox(id) {
   const sandbox = mockSandboxes.find((s) => s.id === id)
@@ -604,5 +619,86 @@ export async function getDominators(snapshotId, limit = 50) {
     return copy((summary?.topDominators || []).slice(0, limit))
   }
   const response = await http.get(`/api/heap-dumps/${snapshotId}/dominators?limit=${limit}`)
+  return response.data
+}
+
+// ---------- External DataSource endpoints ----------
+
+// GET /api/datasources — list all external DataSources.
+export async function listDataSources() {
+  if (isMockMode()) {
+    await wait(MOCK_DELAY)
+    return copy(mockDataSources)
+  }
+  const response = await http.get('/api/datasources')
+  return response.data
+}
+
+// GET /api/datasources/{id} — get a specific DataSource configuration.
+export async function getDataSource(id) {
+  if (isMockMode()) {
+    await wait(MOCK_DELAY)
+    const ds = mockDataSources.find((d) => d.id === id)
+    if (!ds) throw mockError(404, `DataSource not found: ${id}`)
+    return copy(ds)
+  }
+  const response = await http.get(`/api/datasources/${id}`)
+  return response.data
+}
+
+// POST /api/datasources — register a new external DataSource configuration.
+export async function createDataSource(request) {
+  if (isMockMode()) {
+    await wait(MOCK_DELAY)
+    const newDs = {
+      id: crypto.randomUUID(),
+      connectionName: request.connectionName,
+      host: request.host,
+      port: Number(request.port) || 5432,
+      databaseName: request.databaseName,
+      databaseUsername: request.databaseUsername,
+      containerId: null,
+      createdAt: now(),
+      updatedAt: now(),
+    }
+    mockDataSources.push(newDs)
+    return copy(newDs)
+  }
+  const response = await http.post('/api/datasources', request)
+  return response.data
+}
+
+// DELETE /api/datasources/{id} — delete a DataSource configuration.
+export async function deleteDataSource(id) {
+  if (isMockMode()) {
+    await wait(MOCK_DELAY)
+    const idx = mockDataSources.findIndex((d) => d.id === id)
+    if (idx !== -1) mockDataSources.splice(idx, 1)
+    return
+  }
+  await http.delete(`/api/datasources/${id}`)
+}
+
+// POST /api/sandboxes/{sandboxId}/containers/{containerId}/datasource/{dataSourceId}
+export async function linkDataSourceToContainer(sandboxId, containerId, dataSourceId) {
+  if (isMockMode()) {
+    await wait(MOCK_DELAY)
+    const ds = mockDataSources.find((d) => d.id === dataSourceId)
+    if (ds) {
+      ds.containerId = containerId
+      ds.updatedAt = now()
+    }
+    const sandbox = mockSandboxes.find((s) => s.id === sandboxId)
+    if (sandbox) {
+      const container = sandbox.containers.find((c) => c.id === containerId)
+      if (container) {
+        container.dataSourceId = dataSourceId
+      }
+    }
+    return copy(ds)
+  }
+  const response = await http.post(
+    `/api/sandboxes/${sandboxId}/containers/${containerId}/datasource/${dataSourceId}`
+  )
   return response.data
 }
