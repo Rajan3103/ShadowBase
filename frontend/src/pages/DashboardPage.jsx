@@ -1,6 +1,8 @@
 // DashboardPage.jsx — live shadow-traffic dashboard.
 // Shows the active sandbox, four metric cards, and a line chart of the error rate.
-// The numbers come from subscribeToMetrics() in services/metrics.js (mock data for now).
+// The numbers come from subscribeToMetrics() in services/metrics.js: mock data, or live data
+// from the backend if "Dashboard data source" is set to Live on the Settings page.
+// A badge next to the title shows which one you are looking at.
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
@@ -13,7 +15,7 @@ import {
   ReferenceLine,
   ResponsiveContainer,
 } from 'recharts'
-import { subscribeToMetrics } from '../services/metrics.js'
+import { subscribeToMetrics, getMetricsSource } from '../services/metrics.js'
 import ErrorConsole from '../components/ErrorConsole.jsx'
 import { CURRENT_SANDBOX_KEY } from '../services/api.js'
 
@@ -46,6 +48,20 @@ function getStatus(errorRate) {
   return { label: 'Breaking', className: 'status-breaking' }
 }
 
+// The badge next to the title: text, colour class and (for the fallback) a tooltip.
+// "source" comes from the latest update; before the first update we use the setting.
+function getSourceBadge(source, reason) {
+  if (source === 'polling') return { label: 'Live', className: 'badge badge-green source-badge' }
+  if (source === 'mock-fallback') {
+    return {
+      label: 'Live unavailable – showing mock data',
+      className: 'badge badge-amber source-badge',
+      title: reason,
+    }
+  }
+  return { label: 'Mock data', className: 'badge badge-grey source-badge' }
+}
+
 // Formats a timestamp as hh:mm:ss (24-hour), e.g. "14:05:09".
 function formatTime(ts) {
   return new Date(ts).toLocaleTimeString('en-GB')
@@ -59,6 +75,8 @@ function DashboardPage() {
   // Goes up by 1 on Reset; this restarts the subscription from zero.
   const [resetKey, setResetKey] = useState(0)
   const [showConsole, setShowConsole] = useState(readShowConsole)
+  // The data source chosen in Settings ("mock" or "polling"), read when the page opens.
+  const [configuredSource] = useState(getMetricsSource)
 
   // Subscribe to metrics while not paused. React runs the cleanup (unsubscribe) when
   // the page closes, when Pause is clicked, or when Reset restarts it.
@@ -95,11 +113,18 @@ function DashboardPage() {
   }
 
   const status = latest ? getStatus(latest.errorRate) : null
+  const badge = getSourceBadge(latest?.source ?? configuredSource, latest?.reason)
 
   return (
     <div>
       <div className="toolbar">
-        <h2>Dashboard</h2>
+        {/* Title + data-source badge */}
+        <div className="title-row">
+          <h2>Dashboard</h2>
+          <span className={badge.className} title={badge.title}>
+            {badge.label}
+          </span>
+        </div>
         <div className="toolbar-buttons">
           <button className="small-button" onClick={() => setIsPaused((paused) => !paused)}>
             {isPaused ? 'Resume' : 'Pause'}

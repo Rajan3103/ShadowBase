@@ -9,7 +9,9 @@ import Editor from '@monaco-editor/react'
 //   onChange — called with the new text every time the user types
 //   onRun    — (optional) called when the user presses Ctrl+Enter / Cmd+Enter
 //   height   — (optional) editor height, e.g. "55vh" (the default) or "75vh"
-function SqlEditor({ value, onChange, onRun, height = '55vh' }) {
+//   onMount  — (optional) called once with (editor, monaco) when Monaco has loaded,
+//              so the page can move the cursor or add decorations (coloured underlines)
+function SqlEditor({ value, onChange, onRun, height = '55vh', onMount }) {
   // The shortcut is registered only once (when the editor loads), so we keep the
   // latest onRun in a ref. Otherwise the shortcut would call an old version of it.
   const onRunRef = useRef(onRun)
@@ -24,6 +26,8 @@ function SqlEditor({ value, onChange, onRun, height = '55vh' }) {
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => {
       onRunRef.current?.()
     })
+    // Hand the editor to the page that uses us (if it asked for it).
+    onMount?.(editor, monaco)
   }
 
   return (

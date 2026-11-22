@@ -336,6 +336,32 @@ export async function getDemoUser() {
   return response.data
 }
 
+// ---------- Live metrics + health check ----------
+// These always call the real backend (they are used by "Live" dashboard mode and the
+// sidebar status dot). The 5-second timeout stops a hung request from waiting forever.
+
+// GET /api/metrics — returns { replayed, failed, errorRate }.
+export async function getMetrics() {
+  const response = await http.get('/api/metrics', { timeout: 5000 })
+  return response.data
+}
+
+// GET /api/metrics/errors — returns an array of { id, ts, table, operation, sqlState, message }.
+export async function getRecentErrors() {
+  const response = await http.get('/api/metrics/errors', { timeout: 5000 })
+  return response.data
+}
+
+// Returns true if the backend answers GET /api/users/demo, false otherwise. Never throws.
+export async function checkBackendHealth() {
+  try {
+    await http.get('/api/users/demo', { timeout: 5000 })
+    return true
+  } catch {
+    return false
+  }
+}
+
 // ---------- Schema Management endpoints ----------
 
 // POST /api/sandboxes/{sandboxId}/schema/import — upload SQL schema file.

@@ -5,7 +5,10 @@
 // - A collapsible history list keeps the last 20 scripts you ran.
 // - Save / load / delete named scripts, export to a .sql file, open a .sql file.
 // - Layout toggles (Split / Side by side / Editor only) and Focus mode.
-import { useEffect, useRef, useState } from 'react'
+// - "Check Risk" lists risky operations (DROP, RENAME, ...) and underlines their lines;
+//   Apply Migration shows the same check and needs a tick-box when risks are HIGH.
+// - "Load demo script" puts a breaking example migration in the editor.
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import SqlEditor from '../components/SqlEditor.jsx'
 import ResultsTable from '../components/ResultsTable.jsx'
@@ -17,6 +20,7 @@ import {
   isMockMode,
 } from '../services/api.js'
 import { listScripts, saveScript, deleteScript, getScript } from '../services/scripts.js'
+import { analyzeMigration, countByLevel } from '../services/migrationRisk.js'
 
 const DEFAULT_SQL = '-- Write your migration script here\nSELECT * FROM customers;'
 const CURRENT_CONTAINER_KEY = 'shadowbase.currentContainerId'
@@ -24,6 +28,16 @@ const HISTORY_KEY = 'shadowbase.queryHistory'
 const MAX_HISTORY = 20
 const LAYOUT_KEY = 'shadowbase.editorLayout'
 const MAX_FILE_BYTES = 1024 * 1024 // 1 MB limit for "Open .sql"
+
+// The example breaking migration for the demo ("Load demo script" button).
+const DEMO_NAME = 'demo_merge_customer_profiles'
+const DEMO_SQL = `-- Demo: merge customer_profiles into customers (BREAKING)
+ALTER TABLE customers ADD COLUMN phone VARCHAR(20);
+ALTER TABLE customers ADD COLUMN city VARCHAR(100);
+UPDATE customers c SET phone = p.phone, city = p.city
+  FROM customer_profiles p WHERE p.customer_id = c.id;
+DROP TABLE customer_profiles;
+`
 
 // The three layout options for the toggle group.
 const LAYOUTS = [
@@ -77,6 +91,33 @@ function toFileName(name) {
   return name.replace(/[^\w.-]+/g, '_') || 'script'
 }
 
+// The summary line for a list of findings, e.g. "2 high, 1 medium, 0 low risks".
+function riskSummary(findings) {
+  if (findings.length === 0) return 'No risky operations found ✓'
+  const counts = countByLevel(findings)
+  return `${counts.high} high, ${counts.medium} medium, ${counts.low} low risks`
+}
+
+// Shows a list of risk findings. Clicking one calls onSelect(line) to jump there.
+// Used by the "Check Risk" panel and inside the Apply Migration confirmation.
+function RiskFindings({ findings, onSelect }) {
+  if (findings.length === 0) return null
+  return (
+    <ul className="risk-list">
+      {findings.map((finding, index) => (
+        <li key={index}>
+          <button className="risk-item" onClick={() => onSelect(finding.line)}>
+            {/* e.g. "level-high" makes the badge red */}
+            <span className={`level-badge level-${finding.level}`}>{finding.level}</span>
+            <span className="risk-line-number">Line {finding.line}</span>
+            <span className="risk-message">{finding.message}</span>
+          </button>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
 // Props (from App.jsx):
 //   focusMode         — true when the sidebar is hidden
 //   onToggleFocusMode — turns focus mode on/off
@@ -98,6 +139,14 @@ function EditorPage({ focusMode, onToggleFocusMode }) {
   // ---- Apply Migration ----
   const [isConfirming, setIsConfirming] = useState(false) // confirmation panel open?
   const [migrationResult, setMigrationResult] = useState(null) // { ok, text }
+  // The "I have reviewed the high-risk changes" tick-box in the confirmation panel.
+  const [riskAcknowledged, setRiskAcknowledged] = useState(false)
+
+  // ---- Risk check ----
+  const [riskFindings, setRiskFindings] = useState(null) // null = the panel is closed
+  const editorRef = useRef(null) // the Monaco editor (set in handleEditorMount)
+  const monacoRef = useRef(null) // the Monaco library (for monaco.Range)
+  const decorationsRef = useRef(null) // the current coloured underlines
 
   // ---- History ----
   const [history, setHistory] = useState(readHistory)
@@ -149,6 +198,68 @@ function EditorPage({ focusMode, onToggleFocusMode }) {
     loadContainers()
   }, [currentSandboxId])
 
+  // ================= Risk check =================
+
+  // Monaco has loaded: keep the editor so we can move the cursor and add underlines.
+  function handleEditorMount(editor, monaco) {
+    editorRef.current = editor
+    monacoRef.current = monaco
+    // One "collection" holds our underlines; we replace or clear its contents later.
+    decorationsRef.current = editor.createDecorationsCollection()
+    // Any change to the text (typing, loading a script, ...) makes the underlines
+    // out of date, so remove them, and ask for the risk tick-box again.
+    editor.onDidChangeModelContent(() => {
+      decorationsRef.current?.clear()
+      setRiskAcknowledged(false)
+    })
+  }
+
+  // Underlines lines with HIGH (red) and MEDIUM (amber) findings in the editor.
+  function showRiskDecorations(findings) {
+    const editor = editorRef.current
+    const monaco = monacoRef.current
+    const model = editor?.getModel()
+    if (!model || !decorationsRef.current) return // editor not loaded yet
+
+    const decorations = findings
+      .filter((finding) => finding.level === 'high' || finding.level === 'medium')
+      .filter((finding) => finding.line <= model.getLineCount())
+      .map((finding) => ({
+        // From the start to the end of the line where the statement begins.
+        range: new monaco.Range(finding.line, 1, finding.line, model.getLineMaxColumn(finding.line)),
+        options: {
+          inlineClassName: `risk-line-${finding.level}`, // wavy underline under the text
+          linesDecorationsClassName: `risk-gutter-${finding.level}`, // coloured bar on the left
+          hoverMessage: { value: finding.message }, // shown when the mouse is over the line
+        },
+      }))
+    decorationsRef.current.set(decorations)
+  }
+
+  // Moves the editor's cursor to a line and scrolls it into view.
+  function jumpToLine(line) {
+    const editor = editorRef.current
+    if (!editor) return
+    editor.revealLineInCenter(line)
+    editor.setPosition({ lineNumber: line, column: 1 })
+    editor.focus()
+  }
+
+  // "Check Risk" button: analyse the script, show the panel and underline the lines.
+  function handleCheckRisk() {
+    const findings = analyzeMigration(sql)
+    setRiskFindings(findings)
+    showRiskDecorations(findings)
+  }
+
+  // "Apply Migration" button: run the risk check, then open the confirmation panel
+  // (the panel shows the findings; see confirmFindings below).
+  function handleApplyClick() {
+    showRiskDecorations(analyzeMigration(sql))
+    setRiskAcknowledged(false)
+    setIsConfirming(true)
+  }
+
   // The user picked a different container in the dropdown.
   function handleContainerChange(event) {
     setContainerId(event.target.value)
@@ -199,13 +310,15 @@ function EditorPage({ focusMode, onToggleFocusMode }) {
 
   // Run button and Ctrl+Enter. Ignored if something is already running.
   function handleRun() {
-    if (isRunning) return
+    if (isRunning || targetMissing) return
     setMigrationResult(null)
     executeScript()
   }
 
   // "Yes, apply" in the confirmation panel.
   async function handleConfirmMigration() {
+    // Safety net: with HIGH risks the tick-box must be ticked first.
+    if (confirmCounts.high > 0 && !riskAcknowledged) return
     setIsConfirming(false)
     setMigrationResult(null)
     const outcome = await executeScript()
@@ -279,7 +392,9 @@ function EditorPage({ focusMode, onToggleFocusMode }) {
 
   // "Load anyway" or "Delete" in the inline confirm panel.
   function handleConfirmPending() {
-    if (pending.action === 'load') {
+    if (pending.action === 'demo') {
+      loadDemoScript()
+    } else if (pending.action === 'load') {
       loadScript(pending.name)
     } else if (!deleteScript(pending.name)) {
       setScriptError('Could not delete: browser storage is unavailable.')
@@ -289,6 +404,26 @@ function EditorPage({ focusMode, onToggleFocusMode }) {
       setBaselineSql(null) // the editor text is no longer saved anywhere
     }
     setPending(null)
+  }
+
+  // Puts the demo migration in the editor (like opening a file).
+  function loadDemoScript() {
+    setSql(DEMO_SQL)
+    setScriptName(DEMO_NAME)
+    setSelectedName('')
+    setBaselineSql(DEMO_SQL)
+    setScriptError(null)
+  }
+
+  // "Load demo script" button. With unsaved changes, ask first (same as loading a script).
+  function handleLoadDemoClick() {
+    setScriptError(null)
+    if (isUnsaved) {
+      setPending({ action: 'demo', name: DEMO_NAME })
+    } else {
+      setPending(null)
+      loadDemoScript()
+    }
   }
 
   // ================= Export / Open =================
@@ -354,6 +489,23 @@ function EditorPage({ focusMode, onToggleFocusMode }) {
 
   const selectedContainer = containers.find((c) => c.id === containerId)
 
+  // Why Run / Apply are disabled, or null if they can be used.
+  // In mock mode no sandbox is needed, so nothing is ever missing.
+  let targetMissing = null
+  if (!isMockMode()) {
+    if (!currentSandboxId) {
+      targetMissing = 'No sandbox selected. Go to Sandboxes and click "Use in editor".'
+    } else if (!containerId) {
+      targetMissing = 'No container selected. Pick (or add) a container for this sandbox.'
+    }
+  }
+
+  // While the confirmation panel is open, check the current script for risks.
+  // useMemo re-runs the check only when the text (or the panel) changes.
+  const confirmFindings = useMemo(() => (isConfirming ? analyzeMigration(sql) : []), [isConfirming, sql])
+  const confirmCounts = countByLevel(confirmFindings)
+  const needsAcknowledge = confirmCounts.high > 0
+
   return (
     <div>
       {/* ---- Header: title, target, buttons ---- */}
@@ -379,24 +531,52 @@ function EditorPage({ focusMode, onToggleFocusMode }) {
           <button className="small-button" onClick={() => setShowHistory((open) => !open)}>
             {showHistory ? 'Hide history' : `History (${history.length})`}
           </button>
+          {/* Check Risk works even without a sandbox (it only reads the editor text). */}
           <button
-            className="small-button danger"
-            onClick={() => setIsConfirming(true)}
-            disabled={isRunning || isConfirming}
+            className="small-button"
+            onClick={handleCheckRisk}
+            title="List risky operations in this script (works without a sandbox)"
           >
-            Apply Migration
+            Check Risk
           </button>
+          {/* A disabled button shows no tooltip in some browsers, so the reason is put
+              on a <span> around it instead. */}
+          <span className="button-tip" title={targetMissing || 'Apply the whole script to the shadow database'}>
+            <button
+              className="small-button danger"
+              onClick={handleApplyClick}
+              disabled={isRunning || isConfirming || Boolean(targetMissing)}
+            >
+              Apply Migration
+            </button>
+          </span>
           {/* Disabled while running, so the query can't be sent twice. */}
-          <button
-            className="run-button"
-            onClick={handleRun}
-            disabled={isRunning}
-            title="Ctrl+Enter (Cmd+Enter on Mac)"
-          >
-            {isRunning ? 'Running...' : 'Run'}
-          </button>
+          <span className="button-tip" title={targetMissing || 'Ctrl+Enter (Cmd+Enter on Mac)'}>
+            <button
+              className="run-button"
+              onClick={handleRun}
+              disabled={isRunning || Boolean(targetMissing)}
+            >
+              {isRunning ? 'Running...' : 'Run'}
+            </button>
+          </span>
         </div>
       </div>
+
+      {/* ---- Risk check results (after "Check Risk") ---- */}
+      {riskFindings && (
+        <div className="risk-panel">
+          <div className="risk-summary">
+            <strong className={riskFindings.length === 0 ? 'risk-ok' : ''}>
+              {riskSummary(riskFindings)}
+            </strong>
+            <button className="small-button" onClick={() => setRiskFindings(null)}>
+              Close
+            </button>
+          </div>
+          <RiskFindings findings={riskFindings} onSelect={jumpToLine} />
+        </div>
+      )}
 
       {/* ---- Second toolbar row: scripts, files, layout ---- */}
       <div className="script-bar">
@@ -440,6 +620,9 @@ function EditorPage({ focusMode, onToggleFocusMode }) {
             disabled={!selectedName}
           >
             Delete
+          </button>
+          <button className="small-button" onClick={handleLoadDemoClick}>
+            Load demo script
           </button>
         </div>
 
@@ -489,12 +672,14 @@ function EditorPage({ focusMode, onToggleFocusMode }) {
       {pending && (
         <div className="inline-confirm">
           <span>
-            {pending.action === 'load'
-              ? `You have unsaved changes. Load "${pending.name}" and lose them?`
-              : `Delete saved script "${pending.name}"?`}
+            {pending.action === 'delete'
+              ? `Delete saved script "${pending.name}"?`
+              : pending.action === 'demo'
+                ? 'You have unsaved changes. Load the demo script and lose them?'
+                : `You have unsaved changes. Load "${pending.name}" and lose them?`}
           </span>
           <button className="small-button danger" onClick={handleConfirmPending}>
-            {pending.action === 'load' ? 'Load anyway' : 'Delete'}
+            {pending.action === 'delete' ? 'Delete' : 'Load anyway'}
           </button>
           <button className="small-button" onClick={() => setPending(null)}>
             Cancel
@@ -541,9 +726,32 @@ function EditorPage({ focusMode, onToggleFocusMode }) {
             <strong>Apply this migration?</strong> This will change the schema of the shadow
             database only. Production is never touched.
           </p>
+
+          {/* The risk check for the current script */}
+          <p className="risk-summary-line">
+            Risk check: <strong>{riskSummary(confirmFindings)}</strong>
+          </p>
+          <RiskFindings findings={confirmFindings} onSelect={jumpToLine} />
+
+          {/* With HIGH risks, the user must tick this box before applying. */}
+          {needsAcknowledge && (
+            <label className="checkbox-row">
+              <input
+                type="checkbox"
+                checked={riskAcknowledged}
+                onChange={(event) => setRiskAcknowledged(event.target.checked)}
+              />
+              I have reviewed the high-risk changes
+            </label>
+          )}
+
           <div className="toolbar-buttons">
-            <button className="run-button" onClick={handleConfirmMigration}>
-              Yes, apply
+            <button
+              className={needsAcknowledge ? 'run-button danger-confirm' : 'run-button'}
+              onClick={handleConfirmMigration}
+              disabled={needsAcknowledge && !riskAcknowledged}
+            >
+              {needsAcknowledge ? 'I understand the risks – Apply to shadow DB' : 'Yes, apply'}
             </button>
             <button className="small-button" onClick={() => setIsConfirming(false)}>
               Cancel
@@ -568,6 +776,7 @@ function EditorPage({ focusMode, onToggleFocusMode }) {
               value={sql}
               onChange={setSql}
               onRun={handleRun}
+              onMount={handleEditorMount}
               height={layout === 'editor' ? '75vh' : '55vh'}
             />
           </div>
