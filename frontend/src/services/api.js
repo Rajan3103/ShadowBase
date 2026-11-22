@@ -115,6 +115,37 @@ const mockSandboxes = [
   },
 ]
 
+// Mock store for analyzed heap dumps
+const DEMO_HEAP_SNAPSHOT_ID = '00000000-0000-0000-0000-000000000001'
+const mockHeapSnapshots = {
+  [DEMO_HEAP_SNAPSHOT_ID]: {
+    snapshotId: DEMO_HEAP_SNAPSHOT_ID,
+    headerVersion: 'JAVA PROFILE 1.0.2',
+    idSize: 8,
+    dumpTimestamp: Date.now() - 3600000,
+    totalHeapSizeBytes: 67108864, // 64 MB
+    totalObjectsCount: 24530,
+    totalClassesCount: 1420,
+    gcRootsCount: 38,
+    classHistogram: [
+      { className: 'byte[]', objectCount: 4120, totalShallowSizeBytes: 24500000, totalRetainedSizeBytes: 24500000 },
+      { className: 'java.lang.String', objectCount: 8940, totalShallowSizeBytes: 214560, totalRetainedSizeBytes: 18450000 },
+      { className: 'java.util.concurrent.ConcurrentHashMap$Node', objectCount: 3410, totalShallowSizeBytes: 109120, totalRetainedSizeBytes: 12400000 },
+      { className: 'com.shadowbase.backend.Entity.Sandbox', objectCount: 120, totalShallowSizeBytes: 7680, totalRetainedSizeBytes: 8500000 },
+      { className: 'java.util.HashMap$Node', objectCount: 2150, totalShallowSizeBytes: 68800, totalRetainedSizeBytes: 3200000 },
+      { className: 'char[]', objectCount: 950, totalShallowSizeBytes: 1280000, totalRetainedSizeBytes: 1280000 },
+      { className: 'org.postgresql.jdbc.PgConnection', objectCount: 16, totalShallowSizeBytes: 2560, totalRetainedSizeBytes: 2100000 },
+    ],
+    topDominators: [
+      { objectId: 10001, className: 'com.shadowbase.backend.Entity.Sandbox', shallowSizeBytes: 64, retainedSizeBytes: 8500000, retainedPercentage: 12.67, dominatedChildCount: 1420 },
+      { objectId: 10002, className: 'java.util.concurrent.ConcurrentHashMap', shallowSizeBytes: 96, retainedSizeBytes: 12400000, retainedPercentage: 18.48, dominatedChildCount: 3410 },
+      { objectId: 10003, className: 'byte[]', shallowSizeBytes: 5242880, retainedSizeBytes: 5242880, retainedPercentage: 7.81, dominatedChildCount: 0 },
+      { objectId: 10004, className: 'java.lang.ref.Finalizer', shallowSizeBytes: 48, retainedSizeBytes: 4120000, retainedPercentage: 6.14, dominatedChildCount: 890 },
+      { objectId: 10005, className: 'org.postgresql.jdbc.PgConnection', shallowSizeBytes: 160, retainedSizeBytes: 2100000, retainedPercentage: 3.13, dominatedChildCount: 145 },
+    ],
+  },
+}
+
 // Finds a mock sandbox by id, or throws a 404 like the backend would.
 function findMockSandbox(id) {
   const sandbox = mockSandboxes.find((s) => s.id === id)
@@ -444,5 +475,134 @@ export async function getDataSeedJob(sandboxId, jobId) {
     }
   }
   const response = await http.get(`/api/sandboxes/${sandboxId}/data-seeds/${jobId}`)
+  return response.data
+}
+
+// ---------- Heap Dump Diagnostics & Profiling endpoints ----------
+
+// POST /api/heap-dumps/analyze — upload and parse binary HPROF file.
+export async function uploadHeapDump(file) {
+  if (isMockMode()) {
+    await wait(800)
+    const snapshotId = crypto.randomUUID()
+    const mockSummary = {
+      snapshotId,
+      headerVersion: 'JAVA PROFILE 1.0.2',
+      idSize: 8,
+      dumpTimestamp: Date.now(),
+      totalHeapSizeBytes: 67108864, // 64 MB
+      totalObjectsCount: 24530,
+      totalClassesCount: 1420,
+      gcRootsCount: 38,
+      classHistogram: [
+        { className: 'byte[]', objectCount: 4120, totalShallowSizeBytes: 24500000, totalRetainedSizeBytes: 24500000 },
+        { className: 'java.lang.String', objectCount: 8940, totalShallowSizeBytes: 214560, totalRetainedSizeBytes: 18450000 },
+        { className: 'java.util.concurrent.ConcurrentHashMap$Node', objectCount: 3410, totalShallowSizeBytes: 109120, totalRetainedSizeBytes: 12400000 },
+        { className: 'com.shadowbase.backend.Entity.Sandbox', objectCount: 120, totalShallowSizeBytes: 7680, totalRetainedSizeBytes: 8500000 },
+        { className: 'java.util.HashMap$Node', objectCount: 2150, totalShallowSizeBytes: 68800, totalRetainedSizeBytes: 3200000 },
+        { className: 'char[]', objectCount: 950, totalShallowSizeBytes: 1280000, totalRetainedSizeBytes: 1280000 },
+        { className: 'org.postgresql.jdbc.PgConnection', objectCount: 16, totalShallowSizeBytes: 2560, totalRetainedSizeBytes: 2100000 },
+      ],
+      topDominators: [
+        { objectId: 10001, className: 'com.shadowbase.backend.Entity.Sandbox', shallowSizeBytes: 64, retainedSizeBytes: 8500000, retainedPercentage: 12.67, dominatedChildCount: 1420 },
+        { objectId: 10002, className: 'java.util.concurrent.ConcurrentHashMap', shallowSizeBytes: 96, retainedSizeBytes: 12400000, retainedPercentage: 18.48, dominatedChildCount: 3410 },
+        { objectId: 10003, className: 'byte[]', shallowSizeBytes: 5242880, retainedSizeBytes: 5242880, retainedPercentage: 7.81, dominatedChildCount: 0 },
+        { objectId: 10004, className: 'java.lang.ref.Finalizer', shallowSizeBytes: 48, retainedSizeBytes: 4120000, retainedPercentage: 6.14, dominatedChildCount: 890 },
+        { objectId: 10005, className: 'org.postgresql.jdbc.PgConnection', shallowSizeBytes: 160, retainedSizeBytes: 2100000, retainedPercentage: 3.13, dominatedChildCount: 145 },
+      ],
+    }
+    mockHeapSnapshots[snapshotId] = mockSummary
+    return copy(mockSummary)
+  }
+
+  const formData = new FormData()
+  formData.append('file', file)
+  const response = await http.post('/api/heap-dumps/analyze', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  })
+  return response.data
+}
+
+// GET /api/heap-dumps/{snapshotId}/summary — retrieve analysis summary.
+export async function getHeapSummary(snapshotId) {
+  if (isMockMode()) {
+    await wait(MOCK_DELAY)
+    const summary = mockHeapSnapshots[snapshotId] || mockHeapSnapshots[DEMO_HEAP_SNAPSHOT_ID]
+    if (!summary) throw mockError(404, `Snapshot not found: ${snapshotId}`)
+    return copy(summary)
+  }
+  const response = await http.get(`/api/heap-dumps/${snapshotId}/summary`)
+  return response.data
+}
+
+// GET /api/heap-dumps/{snapshotId}/objects/{objectId}/retained-size — object retained metrics.
+export async function getRetainedSize(snapshotId, objectId) {
+  if (isMockMode()) {
+    await wait(MOCK_DELAY)
+    const numId = Number(objectId)
+    return {
+      objectId: numId,
+      className: numId === 10002 ? 'java.util.concurrent.ConcurrentHashMap' : 'com.shadowbase.backend.Entity.Sandbox',
+      shallowSizeBytes: numId === 10002 ? 96 : 64,
+      retainedSizeBytes: numId === 10002 ? 12400000 : 8500000,
+      percentageOfTotalHeap: numId === 10002 ? 18.48 : 12.67,
+      dominatedObjectCount: numId === 10002 ? 3410 : 1420,
+      immediateDominatorId: 1,
+    }
+  }
+  const response = await http.get(`/api/heap-dumps/${snapshotId}/objects/${objectId}/retained-size`)
+  return response.data
+}
+export const getObjectRetainedSize = getRetainedSize
+
+// GET /api/heap-dumps/{snapshotId}/objects/{objectId}/reference-chain — trace path to GC root.
+export async function getReferenceChain(snapshotId, objectId) {
+  if (isMockMode()) {
+    await wait(MOCK_DELAY)
+    const numId = Number(objectId)
+    return {
+      targetObjectId: numId,
+      targetClassName: numId === 10002 ? 'java.util.concurrent.ConcurrentHashMap' : 'com.shadowbase.backend.Entity.Sandbox',
+      rootObjectId: 1,
+      rootType: 'SYSTEM_CLASS',
+      rootContext: 'Thread [main] (Daemon / GC Root)',
+      hopsCount: 3,
+      hops: [
+        {
+          fromObjectId: 1,
+          fromClassName: 'java.lang.Thread',
+          toObjectId: 50,
+          toClassName: 'java.util.concurrent.ConcurrentHashMap',
+          fieldName: 'contextClassLoader',
+        },
+        {
+          fromObjectId: 50,
+          fromClassName: 'java.util.concurrent.ConcurrentHashMap',
+          toObjectId: 120,
+          toClassName: 'java.util.concurrent.ConcurrentHashMap$Node',
+          fieldName: 'table[14]',
+        },
+        {
+          fromObjectId: 120,
+          fromClassName: 'java.util.concurrent.ConcurrentHashMap$Node',
+          toObjectId: numId,
+          toClassName: numId === 10002 ? 'java.util.concurrent.ConcurrentHashMap' : 'com.shadowbase.backend.Entity.Sandbox',
+          fieldName: 'val',
+        },
+      ],
+    }
+  }
+  const response = await http.get(`/api/heap-dumps/${snapshotId}/objects/${objectId}/reference-chain`)
+  return response.data
+}
+
+// GET /api/heap-dumps/{snapshotId}/dominators — retrieve top dominators from Dominator Tree.
+export async function getDominators(snapshotId, limit = 50) {
+  if (isMockMode()) {
+    await wait(MOCK_DELAY)
+    const summary = mockHeapSnapshots[snapshotId] || mockHeapSnapshots[DEMO_HEAP_SNAPSHOT_ID]
+    return copy((summary?.topDominators || []).slice(0, limit))
+  }
+  const response = await http.get(`/api/heap-dumps/${snapshotId}/dominators?limit=${limit}`)
   return response.data
 }

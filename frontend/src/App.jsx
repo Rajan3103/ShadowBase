@@ -9,6 +9,7 @@ import EditorPage from './pages/EditorPage.jsx'
 import SandboxesPage from './pages/SandboxesPage.jsx'
 import DashboardPage from './pages/DashboardPage.jsx'
 import SettingsPage from './pages/SettingsPage.jsx'
+import HeapProfilerPage from './pages/HeapProfilerPage.jsx'
 
 const FOCUS_KEY = 'shadowbase.focusMode'
 
@@ -60,6 +61,7 @@ function App() {
           />
           <Route path="/sandboxes" element={<SandboxesPage />} />
           <Route path="/dashboard" element={<DashboardPage />} />
+          <Route path="/heap-profiler" element={<HeapProfilerPage />} />
           <Route path="/settings" element={<SettingsPage />} />
         </Routes>
       </main>

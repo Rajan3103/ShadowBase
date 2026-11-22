@@ -14,6 +14,7 @@ const links = [
   { to: '/editor', label: 'SQL Editor' },
   { to: '/sandboxes', label: 'Sandboxes' },
   { to: '/dashboard', label: 'Dashboard' },
+  { to: '/heap-profiler', label: 'Heap Profiler' },
   { to: '/settings', label: 'Settings' },
 ]
 
