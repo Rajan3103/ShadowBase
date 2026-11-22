@@ -161,6 +161,9 @@ const mockDataSources = [
   },
 ]
 
+// Mock store for Data Seeding jobs
+const mockSeedJobs = {}
+
 // Finds a mock sandbox by id, or throws a 404 like the backend would.
 function findMockSandbox(id) {
   const sandbox = mockSandboxes.find((s) => s.id === id)
@@ -465,31 +468,129 @@ export async function getSchemaStatus(sandboxId, containerId) {
 export async function startDataSeed(sandboxId, seedRequest = {}) {
   if (isMockMode()) {
     await wait(MOCK_DELAY)
-    return {
-      id: crypto.randomUUID(),
+    const jobId = crypto.randomUUID()
+    const tables = seedRequest.tables && seedRequest.tables.length > 0
+      ? seedRequest.tables
+      : ['users', 'products', 'orders', 'order_items']
+    const newJob = {
+      id: jobId,
       sandboxId,
-      status: 'QUEUED',
-      totalTables: 2,
+      containerId: seedRequest.containerId || 'c-mock-demo',
+      status: 'RUNNING',
       mode: seedRequest.mode || 'FULL_DATABASE',
+      consistencyMode: seedRequest.consistencyMode || 'SNAPSHOT',
+      totalTables: tables.length,
+      completedTables: 0,
+      totalRowsRead: 0,
+      totalRowsInserted: 0,
+      createdAt: now(),
+      startedAt: now(),
+      completedAt: null,
+      errorMessage: null,
+      tables: tables.map((t) => ({
+        id: crypto.randomUUID(),
+        tableName: t,
+        status: 'PENDING',
+        rowsRead: 0,
+        rowsInserted: 0,
+      })),
     }
+    if (!mockSeedJobs[sandboxId]) mockSeedJobs[sandboxId] = []
+    mockSeedJobs[sandboxId].unshift(newJob)
+    return copy(newJob)
   }
   const response = await http.post(`/api/sandboxes/${sandboxId}/data-seeds`, seedRequest)
+  return response.data
+}
+
+// POST /api/sandboxes/{sandboxId}/data-seeds/validate — preflight validation.
+export async function validateDataSeed(sandboxId, seedRequest = {}) {
+  if (isMockMode()) {
+    await wait(MOCK_DELAY)
+    const tables = seedRequest.tables && seedRequest.tables.length > 0
+      ? seedRequest.tables
+      : ['users', 'products', 'orders', 'order_items']
+    return {
+      valid: true,
+      sourceEngine: 'POSTGRESQL',
+      targetEngine: 'POSTGRESQL',
+      candidateTables: tables,
+      plannedOrder: tables,
+      validationErrors: [],
+      validationWarnings: [],
+    }
+  }
+  const response = await http.post(`/api/sandboxes/${sandboxId}/data-seeds/validate`, seedRequest)
   return response.data
 }
 
 // GET /api/sandboxes/{sandboxId}/data-seeds/{jobId} — get seeding job progress.
 export async function getDataSeedJob(sandboxId, jobId) {
   if (isMockMode()) {
-    return {
-      id: jobId,
-      sandboxId,
-      status: 'SUCCESS',
-      totalTables: 2,
-      completedTables: 2,
-      totalRowsInserted: 150,
+    const jobs = mockSeedJobs[sandboxId] || []
+    const job = jobs.find((j) => j.id === jobId)
+    if (!job) {
+      return {
+        id: jobId,
+        sandboxId,
+        status: 'SUCCESS',
+        totalTables: 4,
+        completedTables: 4,
+        totalRowsRead: 2540,
+        totalRowsInserted: 2540,
+        tables: [
+          { tableName: 'users', status: 'COMPLETED', rowsRead: 500, rowsInserted: 500 },
+          { tableName: 'products', status: 'COMPLETED', rowsRead: 340, rowsInserted: 340 },
+          { tableName: 'orders', status: 'COMPLETED', rowsRead: 850, rowsInserted: 850 },
+          { tableName: 'order_items', status: 'COMPLETED', rowsRead: 850, rowsInserted: 850 },
+        ],
+      }
     }
+    // Simulate step progress on consecutive polls
+    if (job.status === 'RUNNING') {
+      const pendingIdx = job.tables.findIndex((t) => t.status !== 'COMPLETED')
+      if (pendingIdx !== -1) {
+        job.tables[pendingIdx].status = 'COMPLETED'
+        job.tables[pendingIdx].rowsRead = (pendingIdx + 1) * 350
+        job.tables[pendingIdx].rowsInserted = (pendingIdx + 1) * 350
+        job.completedTables = pendingIdx + 1
+        job.totalRowsRead = job.tables.reduce((acc, t) => acc + t.rowsRead, 0)
+        job.totalRowsInserted = job.tables.reduce((acc, t) => acc + t.rowsInserted, 0)
+        if (job.completedTables === job.totalTables) {
+          job.status = 'SUCCESS'
+          job.completedAt = now()
+        }
+      }
+    }
+    return copy(job)
   }
   const response = await http.get(`/api/sandboxes/${sandboxId}/data-seeds/${jobId}`)
+  return response.data
+}
+
+// GET /api/sandboxes/{sandboxId}/data-seeds — list seeding history.
+export async function listDataSeedJobs(sandboxId) {
+  if (isMockMode()) {
+    await wait(MOCK_DELAY)
+    return copy(mockSeedJobs[sandboxId] || [])
+  }
+  const response = await http.get(`/api/sandboxes/${sandboxId}/data-seeds`)
+  return response.data
+}
+
+// POST /api/sandboxes/{sandboxId}/data-seeds/{jobId}/cancel — cancel active job.
+export async function cancelDataSeedJob(sandboxId, jobId) {
+  if (isMockMode()) {
+    await wait(MOCK_DELAY)
+    const jobs = mockSeedJobs[sandboxId] || []
+    const job = jobs.find((j) => j.id === jobId)
+    if (job) {
+      job.status = 'CANCELLED'
+      job.completedAt = now()
+    }
+    return copy(job)
+  }
+  const response = await http.post(`/api/sandboxes/${sandboxId}/data-seeds/${jobId}/cancel`)
   return response.data
 }
 

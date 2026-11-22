@@ -2,6 +2,7 @@
 // Shows the sandbox details, its action buttons and a table of its database containers.
 // The card loads its own containers and shows its own errors.
 import { useEffect, useRef, useState } from 'react'
+import DataSeedModal from './DataSeedModal.jsx'
 import {
   startSandbox,
   stopSandbox,
@@ -10,7 +11,6 @@ import {
   addContainer,
   getContainers,
   importSchemaFile,
-  startDataSeed,
   getErrorMessage,
 } from '../services/api.js'
 
@@ -54,6 +54,7 @@ function SandboxCard({ sandbox, isActive, refreshKey, onUpdate, onUseInEditor })
   const [actionMessage, setActionMessage] = useState(null)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const [copiedId, setCopiedId] = useState(null) // container whose URL was just copied
+  const [showSeedModal, setShowSeedModal] = useState(false)
   const fileInputRef = useRef(null)
 
   const isDestroyed = sandbox.status === 'DESTROYED'
@@ -136,12 +137,13 @@ function SandboxCard({ sandbox, isActive, refreshKey, onUpdate, onUseInEditor })
   }
 
   function handleSeedData() {
-    runAction('seed', async () => {
-      const res = await startDataSeed(sandbox.id)
-      setActionMessage(`Data seeding started (Job: ${res.id ? res.id.slice(0, 8) : 'active'})`)
-      onUpdate(await getSandbox(sandbox.id))
-      await loadContainers()
-    })
+    setShowSeedModal(true)
+  }
+
+  async function handleJobStarted(job) {
+    setActionMessage(`Data seeding started (Job: ${job.id ? job.id.slice(0, 8) : 'active'})`)
+    onUpdate(await getSandbox(sandbox.id))
+    await loadContainers()
   }
 
   // Copies the JDBC URL to the clipboard and shows "Copied!" for 1.5 seconds.
@@ -281,6 +283,16 @@ function SandboxCard({ sandbox, isActive, refreshKey, onUpdate, onUseInEditor })
             </tbody>
           </table>
         </div>
+      )}
+
+      {/* ---- Data Seeding Management & Progress Modal ---- */}
+      {showSeedModal && (
+        <DataSeedModal
+          sandbox={sandbox}
+          containers={containers}
+          onClose={() => setShowSeedModal(false)}
+          onJobStarted={handleJobStarted}
+        />
       )}
     </div>
   )
