@@ -41,14 +41,25 @@ public class SqlQueryServiceImpl implements SqlQueryService {
     private final SandboxRepository sandboxRepository;
     private final ContainerRepository containerRepository;
     private final ContainerConnectionProvider connectionProvider;
+    private final MetricsService metricsService;
 
     public SqlQueryServiceImpl(
             SandboxRepository sandboxRepository,
             ContainerRepository containerRepository,
             ContainerConnectionProvider connectionProvider) {
+        this(sandboxRepository, containerRepository, connectionProvider, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public SqlQueryServiceImpl(
+            SandboxRepository sandboxRepository,
+            ContainerRepository containerRepository,
+            ContainerConnectionProvider connectionProvider,
+            MetricsService metricsService) {
         this.sandboxRepository = sandboxRepository;
         this.containerRepository = containerRepository;
         this.connectionProvider = connectionProvider;
+        this.metricsService = metricsService;
     }
 
     /**
@@ -114,6 +125,10 @@ public class SqlQueryServiceImpl implements SqlQueryService {
                     String summary = String.format("Query executed successfully in %d ms (%d row(s) returned)",
                             executionTimeMs, rows.size());
 
+                    if (metricsService != null) {
+                        metricsService.recordExecution(true, extractTable(sql), extractOperation(sql), null, null);
+                    }
+
                     return SqlQueryResponse.builder()
                             .columns(columns)
                             .rows(rows)
@@ -132,6 +147,10 @@ public class SqlQueryServiceImpl implements SqlQueryService {
                 String summary = String.format("Statement executed successfully in %d ms (%d row(s) affected)",
                         executionTimeMs, effectiveCount);
 
+                if (metricsService != null) {
+                    metricsService.recordExecution(true, extractTable(sql), extractOperation(sql), null, null);
+                }
+
                 return SqlQueryResponse.builder()
                         .columns(columns)
                         .rows(rows)
@@ -144,6 +163,9 @@ public class SqlQueryServiceImpl implements SqlQueryService {
 
         } catch (SQLException e) {
             log.warn("SQL execution error on container {}: {}", container.getId(), e.getMessage());
+            if (metricsService != null) {
+                metricsService.recordExecution(false, extractTable(sql), extractOperation(sql), e.getSQLState(), e.getMessage());
+            }
             throw new SqlQueryException(e.getMessage(), e);
         }
     }
@@ -175,5 +197,41 @@ public class SqlQueryServiceImpl implements SqlQueryService {
             return "<binary data>";
         }
         return val.toString();
+    }
+
+    private String extractOperation(String sql) {
+        if (sql == null || sql.isBlank()) {
+            return "QUERY";
+        }
+        String trimmed = sql.trim().toUpperCase();
+        if (trimmed.startsWith("SELECT")) return "SELECT";
+        if (trimmed.startsWith("INSERT")) return "INSERT";
+        if (trimmed.startsWith("UPDATE")) return "UPDATE";
+        if (trimmed.startsWith("DELETE")) return "DELETE";
+        if (trimmed.startsWith("CREATE")) return "CREATE";
+        if (trimmed.startsWith("DROP")) return "DROP";
+        if (trimmed.startsWith("ALTER")) return "ALTER";
+        if (trimmed.startsWith("TRUNCATE")) return "TRUNCATE";
+        return "QUERY";
+    }
+
+    private String extractTable(String sql) {
+        if (sql == null || sql.isBlank()) {
+            return "unknown";
+        }
+        try {
+            String[] tokens = sql.trim().split("\\s+");
+            for (int i = 0; i < tokens.length - 1; i++) {
+                String t = tokens[i].toUpperCase();
+                if ("FROM".equals(t) || "INTO".equals(t) || "UPDATE".equals(t) || "TABLE".equals(t)) {
+                    String candidate = tokens[i + 1].replaceAll("[,;\"'`\\[\\]]", "");
+                    if (!candidate.isBlank() && !candidate.equalsIgnoreCase("SELECT")) {
+                        return candidate;
+                    }
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        return "unknown";
     }
 }
