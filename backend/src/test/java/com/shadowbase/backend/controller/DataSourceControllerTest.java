@@ -17,6 +17,7 @@ import org.springframework.http.ResponseEntity;
 
 import com.shadowbase.backend.dto.CreateDataSourceRequest;
 import com.shadowbase.backend.dto.DataSourceResponse;
+import com.shadowbase.backend.dto.DataSourceTestResponse;
 import com.shadowbase.backend.service.DataSourceService;
 
 @ExtendWith(MockitoExtension.class)
@@ -95,5 +96,50 @@ class DataSourceControllerTest {
         assertNotNull(response);
         assertEquals(HttpStatus.NO_CONTENT, response.getStatusCode());
         verify(dataSourceService).deleteDataSource(id);
+    }
+
+    @Test
+    void testTestDataSourceConnection_Returns200Ok() {
+        UUID id = UUID.randomUUID();
+        DataSourceTestResponse testRes = DataSourceTestResponse.builder()
+                .success(true)
+                .message("Connection established successfully.")
+                .latencyMs(25)
+                .databaseType("POSTGRESQL")
+                .build();
+
+        when(dataSourceService.testConnection(id)).thenReturn(testRes);
+
+        ResponseEntity<DataSourceTestResponse> response = controller.testDataSourceConnection(id);
+
+        assertNotNull(response);
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertEquals(true, response.getBody().isSuccess());
+        assertEquals(25, response.getBody().getLatencyMs());
+    }
+
+    @Test
+    void testTestProspectiveConnection_Returns200Ok() {
+        CreateDataSourceRequest req = CreateDataSourceRequest.builder()
+                .host("localhost")
+                .port(5432)
+                .databaseName("test")
+                .databaseUsername("postgres")
+                .build();
+
+        DataSourceTestResponse testRes = DataSourceTestResponse.builder()
+                .success(true)
+                .message("Connection established successfully.")
+                .latencyMs(12)
+                .databaseType("POSTGRESQL")
+                .build();
+
+        when(dataSourceService.testConnection(req)).thenReturn(testRes);
+
+        ResponseEntity<DataSourceTestResponse> response = controller.testProspectiveConnection(req);
+
+        assertNotNull(response);
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertEquals(true, response.getBody().isSuccess());
     }
 }

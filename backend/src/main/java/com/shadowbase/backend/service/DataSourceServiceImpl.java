@@ -1,9 +1,13 @@
 package com.shadowbase.backend.service;
 
+import java.sql.Connection;
+import java.sql.DriverManager;
 import java.util.List;
+import java.util.Properties;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -16,6 +20,7 @@ import com.shadowbase.backend.Repository.DatasourceRepository;
 import com.shadowbase.backend.Repository.SandboxRepository;
 import com.shadowbase.backend.dto.CreateDataSourceRequest;
 import com.shadowbase.backend.dto.DataSourceResponse;
+import com.shadowbase.backend.dto.DataSourceTestResponse;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -193,5 +198,72 @@ public class DataSourceServiceImpl implements DataSourceService {
                 .createdAt(ds.getCreatedAt())
                 .updatedAt(ds.getUpdatedAt())
                 .build();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public DataSourceTestResponse testConnection(UUID id) {
+        if (id == null) {
+            throw new IllegalArgumentException("DataSource ID must not be null");
+        }
+        DataSource ds = datasourceRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("DataSource not found with ID: " + id));
+
+        String password = ds.getDatabasePassword() != null ? ds.getDatabasePassword() : ds.getCredentialReference();
+        return executeConnectionTest(ds.getHost(), ds.getPort(), ds.getDatabaseName(), ds.getDatabaseUsername(), password);
+    }
+
+    @Override
+    public DataSourceTestResponse testConnection(CreateDataSourceRequest request) {
+        if (request == null) {
+            throw new IllegalArgumentException("CreateDataSourceRequest must not be null");
+        }
+        validateRequest(request);
+        return executeConnectionTest(request.getHost(), request.getPort(), request.getDatabaseName(),
+                request.getDatabaseUsername(), request.getDatabasePassword());
+    }
+
+    private DataSourceTestResponse executeConnectionTest(String host, Integer port, String dbName, String username, String password) {
+        int effectivePort = (port != null && port > 0) ? port : 5432;
+        boolean isMysql = effectivePort == 3306 || (dbName != null && dbName.toLowerCase().contains("mysql"));
+        String dbType = isMysql ? "MYSQL" : "POSTGRESQL";
+
+        String url = isMysql
+                ? String.format("jdbc:mysql://%s:%d/%s?connectTimeout=5000&socketTimeout=5000&useSSL=false", host, effectivePort, dbName != null ? dbName : "")
+                : String.format("jdbc:postgresql://%s:%d/%s?connectTimeout=5&socketTimeout=5", host, effectivePort, dbName != null ? dbName : "");
+
+        Properties props = new Properties();
+        if (username != null && !username.isBlank()) props.setProperty("user", username);
+        if (password != null && !password.isBlank()) props.setProperty("password", password);
+
+        long start = System.currentTimeMillis();
+        try {
+            DriverManager.setLoginTimeout(5);
+            try (Connection conn = DriverManager.getConnection(url, props)) {
+                boolean valid = conn.isValid(5);
+                long latency = System.currentTimeMillis() - start;
+                return DataSourceTestResponse.builder()
+                        .success(valid)
+                        .message(valid ? "Connection established successfully." : "Connected but validation query failed.")
+                        .databaseType(dbType)
+                        .latencyMs(latency)
+                        .host(host)
+                        .port(effectivePort)
+                        .databaseName(dbName)
+                        .build();
+            }
+        } catch (Exception e) {
+            long latency = System.currentTimeMillis() - start;
+            log.debug("DataSource connectivity test failed for host={}: {}", host, e.getMessage());
+            return DataSourceTestResponse.builder()
+                    .success(false)
+                    .message("Connection failed: " + e.getMessage())
+                    .databaseType(dbType)
+                    .latencyMs(latency)
+                    .host(host)
+                    .port(effectivePort)
+                    .databaseName(dbName)
+                    .build();
+        }
     }
 }

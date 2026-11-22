@@ -5,6 +5,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import org.junit.jupiter.api.BeforeEach;
@@ -25,6 +26,7 @@ import com.shadowbase.backend.Repository.DatasourceRepository;
 import com.shadowbase.backend.Repository.SandboxRepository;
 import com.shadowbase.backend.dto.CreateDataSourceRequest;
 import com.shadowbase.backend.dto.DataSourceResponse;
+import com.shadowbase.backend.dto.DataSourceTestResponse;
 
 @ExtendWith(MockitoExtension.class)
 class DataSourceServiceTest {
@@ -158,5 +160,32 @@ class DataSourceServiceTest {
                 .build();
 
         assertThrows(IllegalArgumentException.class, () -> dataSourceService.createDataSource(req));
+    }
+
+    @Test
+    void testTestConnection_UnreachableHost_ReturnsFailureResponse() {
+        CreateDataSourceRequest req = CreateDataSourceRequest.builder()
+                .connectionName("source")
+                .host("invalid-host-unreachable.example")
+                .port(5432)
+                .databaseName("db")
+                .databaseUsername("user")
+                .databasePassword("pass")
+                .build();
+
+        DataSourceTestResponse res = dataSourceService.testConnection(req);
+
+        assertNotNull(res);
+        assertFalse(res.isSuccess());
+        assertNotNull(res.getMessage());
+        assertEquals("POSTGRESQL", res.getDatabaseType());
+    }
+
+    @Test
+    void testTestConnection_ById_NotFound_ThrowsException() {
+        UUID id = UUID.randomUUID();
+        when(datasourceRepository.findById(id)).thenReturn(Optional.empty());
+
+        assertThrows(ResourceNotFoundException.class, () -> dataSourceService.testConnection(id));
     }
 }
