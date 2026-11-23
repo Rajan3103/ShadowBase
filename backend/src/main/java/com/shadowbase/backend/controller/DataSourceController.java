@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.shadowbase.backend.dto.CreateDataSourceRequest;
 import com.shadowbase.backend.dto.DataSourceResponse;
+import com.shadowbase.backend.dto.DataSourceTestResponse;
 import com.shadowbase.backend.service.DataSourceService;
 
 import lombok.extern.slf4j.Slf4j;
@@ -81,6 +82,35 @@ public class DataSourceController {
         log.info("REST request to delete DataSource: {}", id);
         dataSourceService.deleteDataSource(id);
         return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * Tests connectivity and credentials for an existing DataSource.
+     *
+     * @param id UUID of the DataSource
+     * @return 200 OK with DataSourceTestResponse
+     */
+    @PostMapping("/api/datasources/{id}/test")
+    public ResponseEntity<DataSourceTestResponse> testDataSourceConnection(@PathVariable("id") UUID id) {
+        log.info("REST request to test DataSource connection: {}", id);
+        DataSourceTestResponse response = dataSourceService.testConnection(id);
+        return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Tests prospective connectivity for a new DataSource configuration before saving.
+     *
+     * @param request configuration details
+     * @return 200 OK with DataSourceTestResponse
+     */
+    @PostMapping("/api/datasources/test")
+    public ResponseEntity<DataSourceTestResponse> testProspectiveConnection(
+            @RequestBody CreateDataSourceRequest request) {
+
+        log.info("REST request to test prospective DataSource connection: host={}",
+                request != null ? request.getHost() : "null");
+        DataSourceTestResponse response = dataSourceService.testConnection(request);
+        return ResponseEntity.ok(response);
     }
 
     /**

@@ -5,6 +5,7 @@ import java.util.UUID;
 
 import com.shadowbase.backend.dto.CreateDataSourceRequest;
 import com.shadowbase.backend.dto.DataSourceResponse;
+import com.shadowbase.backend.dto.DataSourceTestResponse;
 
 /**
  * Service managing external source database configurations and their bindings
@@ -61,4 +62,20 @@ public interface DataSourceService {
      * @param id UUID of the DataSource to delete
      */
     void deleteDataSource(UUID id);
+
+    /**
+     * Tests connectivity, credentials, and response latency to an existing DataSource.
+     *
+     * @param id UUID of the DataSource
+     * @return DataSourceTestResponse with connection status and latency
+     */
+    DataSourceTestResponse testConnection(UUID id);
+
+    /**
+     * Tests connectivity to a prospective DataSource configuration before saving.
+     *
+     * @param request creation request containing host, port, db name, and credentials
+     * @return DataSourceTestResponse with connection status and latency
+     */
+    DataSourceTestResponse testConnection(CreateDataSourceRequest request);
 }
