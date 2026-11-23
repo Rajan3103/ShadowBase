@@ -22,6 +22,21 @@ import lombok.extern.slf4j.Slf4j;
 @Service
 public class MigrationAnalysisServiceImpl implements MigrationAnalysisService {
 
+    private final SqlAstAnalysisService sqlAstAnalysisService;
+    private final ColumnUsageTracker columnUsageTracker;
+
+    public MigrationAnalysisServiceImpl() {
+        this(null, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public MigrationAnalysisServiceImpl(
+            @org.springframework.beans.factory.annotation.Autowired(required = false) SqlAstAnalysisService sqlAstAnalysisService,
+            @org.springframework.beans.factory.annotation.Autowired(required = false) ColumnUsageTracker columnUsageTracker) {
+        this.sqlAstAnalysisService = sqlAstAnalysisService;
+        this.columnUsageTracker = columnUsageTracker;
+    }
+
     private static final String IDENTIFIER = "((?:[`\"\\[]?[\\w$]+[`\"\\]]?\\.)?[`\"\\[]?[\\w$]+[`\"\\]]?)";
 
     private static final Pattern DROP_TABLE_PATTERN =
@@ -59,6 +74,10 @@ public class MigrationAnalysisServiceImpl implements MigrationAnalysisService {
         }
 
         String rawSql = request.getSql();
+        int threshold = (request.getHeavilyQueriedThreshold() != null && request.getHeavilyQueriedThreshold() > 0)
+                ? request.getHeavilyQueriedThreshold()
+                : 10;
+
         List<ParsedStatement> statements = splitStatements(rawSql);
         List<MigrationFindingDto> findings = new ArrayList<>();
 
@@ -144,13 +163,29 @@ public class MigrationAnalysisServiceImpl implements MigrationAnalysisService {
                     clause = clause.trim();
                     if (clause.isEmpty()) continue;
 
-                    MigrationFindingDto finding = analyzeAlterClause(clause, table, line, text);
+                    MigrationFindingDto finding = analyzeAlterClause(clause, table, line, text, threshold);
                     if (finding != null) {
                         findings.add(finding);
                         if ("high".equalsIgnoreCase(finding.getLevel())) highCount++;
                         else if ("medium".equalsIgnoreCase(finding.getLevel())) mediumCount++;
                         else lowCount++;
                     }
+                }
+            }
+        }
+
+        // 8. AST Analysis (JSqlParser) for multi-column drops or AST-specific syntax
+        if (sqlAstAnalysisService != null) {
+            List<MigrationFindingDto> astFindings = sqlAstAnalysisService.analyzeColumnDropRisks(rawSql, threshold);
+            for (MigrationFindingDto astFinding : astFindings) {
+                boolean alreadyCovered = findings.stream().anyMatch(f ->
+                        f.getTable().equalsIgnoreCase(astFinding.getTable()) &&
+                        (f.getRule().equals(astFinding.getRule()) || f.getRule().startsWith("DROPPED_")));
+                if (!alreadyCovered) {
+                    findings.add(astFinding);
+                    if ("high".equalsIgnoreCase(astFinding.getLevel())) highCount++;
+                    else if ("medium".equalsIgnoreCase(astFinding.getLevel())) mediumCount++;
+                    else lowCount++;
                 }
             }
         }
@@ -165,13 +200,28 @@ public class MigrationAnalysisServiceImpl implements MigrationAnalysisService {
                 .build();
     }
 
-    private MigrationFindingDto analyzeAlterClause(String clause, String table, int line, String fullStatement) {
+    private MigrationFindingDto analyzeAlterClause(String clause, String table, int line, String fullStatement, int threshold) {
         Matcher m;
 
         // HIGH: DROP COLUMN
         Pattern dropCol = Pattern.compile("(?i)^DROP\\s+(?:COLUMN\\s+)?(?:IF\\s+EXISTS\\s+)?" + IDENTIFIER);
         if ((m = dropCol.matcher(clause)).find()) {
             String col = cleanName(m.group(1));
+
+            // Cross-reference with live column query usage telemetry
+            if (columnUsageTracker != null && columnUsageTracker.isColumnHeavilyQueried(table, col, threshold)) {
+                long count = columnUsageTracker.getQueryCount(table, col);
+                return buildFinding("high", "DROPPED_HEAVILY_QUERIED_COLUMN",
+                        String.format("CRITICAL: Dropping heavily queried column '%s' on table '%s' (%d recent queries). This will immediately break active application traffic.", col, table, count),
+                        line, fullStatement, table);
+            }
+            if (columnUsageTracker != null && columnUsageTracker.getQueryCount(table, col) > 0) {
+                long count = columnUsageTracker.getQueryCount(table, col);
+                return buildFinding("high", "DROPPED_QUERIED_COLUMN",
+                        String.format("Warning: Dropping active column '%s' on table '%s' (%d recent queries).", col, table, count),
+                        line, fullStatement, table);
+            }
+
             return buildFinding("high", "DROP_COLUMN",
                     String.format("Dropping column '%s' from '%s' will break any live query or insert that still uses it.", col, table),
                     line, fullStatement, table);

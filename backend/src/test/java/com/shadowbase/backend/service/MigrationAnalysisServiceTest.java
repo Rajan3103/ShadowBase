@@ -94,4 +94,40 @@ class MigrationAnalysisServiceTest {
         assertEquals(1, res.getLowRisks());
         assertTrue(res.isHasBreakingRisks());
     }
+
+    @Test
+    void testDroppedHeavilyQueriedColumnWarnsWithCriticalFinding() {
+        ColumnUsageTracker tracker = new ColumnUsageTrackerImpl(10);
+        SqlAstAnalysisService astService = new SqlAstAnalysisServiceImpl(tracker, 10);
+        MigrationAnalysisServiceImpl serviceWithAst = new MigrationAnalysisServiceImpl(astService, tracker);
+
+        // Record 30 queries on users.email
+        tracker.recordColumnAccess("users", "email", 30L);
+
+        String sql = "ALTER TABLE users DROP COLUMN email;";
+        MigrationAnalysisResponse res = serviceWithAst.analyzeMigration(new MigrationAnalysisRequest(sql));
+
+        assertEquals(1, res.getHighRisks());
+        assertTrue(res.isHasBreakingRisks());
+        assertEquals("DROPPED_HEAVILY_QUERIED_COLUMN", res.getFindings().get(0).getRule());
+        assertTrue(res.getFindings().get(0).getMessage().contains("30 recent queries"));
+    }
+
+    @Test
+    void testDroppedQueriedColumnBelowHeavyThresholdWarnsWithActiveTraffic() {
+        ColumnUsageTracker tracker = new ColumnUsageTrackerImpl(10);
+        SqlAstAnalysisService astService = new SqlAstAnalysisServiceImpl(tracker, 10);
+        MigrationAnalysisServiceImpl serviceWithAst = new MigrationAnalysisServiceImpl(astService, tracker);
+
+        // Record 4 queries on users.avatar (below threshold 10)
+        tracker.recordColumnAccess("users", "avatar", 4L);
+
+        String sql = "ALTER TABLE users DROP COLUMN avatar;";
+        MigrationAnalysisResponse res = serviceWithAst.analyzeMigration(new MigrationAnalysisRequest(sql));
+
+        assertEquals(1, res.getHighRisks());
+        assertTrue(res.isHasBreakingRisks());
+        assertEquals("DROPPED_QUERIED_COLUMN", res.getFindings().get(0).getRule());
+        assertTrue(res.getFindings().get(0).getMessage().contains("4 recent queries"));
+    }
 }
