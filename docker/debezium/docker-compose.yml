@@ -1,0 +1,51 @@
+
+services:
+  kafka:
+    image: quay.io/debezium/kafka:3.7
+    container_name: shadowbase-kafka
+    ports:
+      - "9092:9092"
+    environment:
+      CLUSTER_ID: "MkU3OEVBNTcwNTJENDM2Qk"
+      NODE_ID: 1
+      NODE_ROLE: combined
+      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@kafka:9093"
+      KAFKA_LISTENERS: "PLAINTEXT://kafka:9092,CONTROLLER://kafka:9093"
+      KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://kafka:9092"
+
+  connect:
+    image: quay.io/debezium/connect:3.7
+    container_name: shadowbase-debezium
+    ports:
+      - "8083:8083"
+    environment:
+      GROUP_ID: 1
+      BOOTSTRAP_SERVERS: kafka:9092
+      CONFIG_STORAGE_TOPIC: shadowbase_connect_configs
+      OFFSET_STORAGE_TOPIC: shadowbase_connect_offsets
+      STATUS_STORAGE_TOPIC: shadowbase_connect_statuses
+      CONFIG_STORAGE_REPLICATION_FACTOR: 1
+      OFFSET_STORAGE_REPLICATION_FACTOR: 1
+      STATUS_STORAGE_REPLICATION_FACTOR: 1
+    depends_on:
+      - kafka
+
+  mysql-cdc:
+    image: mysql:8.4
+    container_name: shadowbase-mysql-cdc
+    ports:
+      - "3309:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD in .env}
+      MYSQL_DATABASE: shadowbase_cdc
+    command:
+      - "--server-id=223344"
+      - "--log-bin=mysql-bin"
+      - "--binlog-format=ROW"
+      - "--binlog-row-image=FULL"
+    volumes:
+      - mysql_cdc_data:/var/lib/mysql
+
+volumes:
+  mysql_cdc_data:
+
