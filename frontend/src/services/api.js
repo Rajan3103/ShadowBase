@@ -2,6 +2,10 @@
 // Pages call these functions instead of using axios directly.
 // In "mock mode" the functions return fake data, so the app works without a backend.
 import axios from 'axios'
+// Used only by the mock branch of analyzeMigrationRemote (the browser-side risk check).
+// migrationRisk.js also imports this file; that is fine because the functions are only
+// called later, after both files have loaded.
+import { analyzeMigration } from './migrationRisk.js'
 
 // ---------- Setup ----------
 
@@ -346,9 +350,21 @@ export async function getMetrics() {
   return response.data
 }
 
-// GET /api/metrics/errors — returns an array of { id, ts, table, operation, sqlState, message }.
-export async function getRecentErrors() {
-  const response = await http.get('/api/metrics/errors', { timeout: 5000 })
+// GET /api/metrics/errors?limit=50 — returns an array of
+// { id, ts, table, operation, sqlState, message } (ts = epoch milliseconds).
+export async function getRecentErrors(limit = 50) {
+  const response = await http.get('/api/metrics/errors', { params: { limit }, timeout: 5000 })
+  return response.data
+}
+
+// POST /api/metrics/reset — sets the counters to 0 and clears the error buffer.
+// Returns the same shape as getMetrics(): { replayed, failed, errorRate, lastUpdatedTs }.
+export async function resetMetrics() {
+  if (isMockMode()) {
+    await wait(MOCK_DELAY)
+    return { replayed: 0, failed: 0, errorRate: 0, lastUpdatedTs: Date.now() }
+  }
+  const response = await http.post('/api/metrics/reset')
   return response.data
 }
 
@@ -444,5 +460,188 @@ export async function getDataSeedJob(sandboxId, jobId) {
     }
   }
   const response = await http.get(`/api/sandboxes/${sandboxId}/data-seeds/${jobId}`)
+  return response.data
+}
+
+// ---------- Migration risk analysis ----------
+
+// POST /api/analysis/migration-risk — the server checks a migration script for risky operations.
+// Returns { totalRisks, highRisks, mediumRisks, lowRisks, hasBreakingRisks,
+//           findings: [{ level, rule, message, line, statement, table }] }
+export async function analyzeMigrationRemote(sql) {
+  if (isMockMode()) {
+    await wait(MOCK_DELAY)
+    // Mock: run the browser-side check and shape the answer like the server's.
+    const findings = analyzeMigration(sql).map((f) => ({ ...f, level: f.level.toUpperCase() }))
+    const count = (level) => findings.filter((f) => f.level === level).length
+    return {
+      totalRisks: findings.length,
+      highRisks: count('HIGH'),
+      mediumRisks: count('MEDIUM'),
+      lowRisks: count('LOW'),
+      hasBreakingRisks: count('HIGH') > 0,
+      findings,
+    }
+  }
+  const response = await http.post('/api/analysis/migration-risk', { sql })
+  return response.data
+}
+
+// ---------- Data sources (saved database connections) ----------
+// A data source looks like:
+//   { id, connectionName, host, port, databaseName, databaseUsername, containerId, createdAt, updatedAt }
+// The password is sent when creating or testing, but is never returned.
+
+// Our fake list of data sources for mock mode. "legacy_prod" always fails its test.
+const mockDataSources = [
+  {
+    id: crypto.randomUUID(),
+    connectionName: 'shop_primary',
+    host: 'localhost',
+    port: 5432,
+    databaseName: 'shop',
+    databaseUsername: 'shadow',
+    containerId: null,
+    createdAt: now(),
+    updatedAt: now(),
+  },
+  {
+    id: crypto.randomUUID(),
+    connectionName: 'analytics_replica',
+    host: 'localhost',
+    port: 5432,
+    databaseName: 'analytics',
+    databaseUsername: 'reporter',
+    containerId: null,
+    createdAt: now(),
+    updatedAt: now(),
+  },
+  {
+    id: crypto.randomUUID(),
+    connectionName: 'orders_mysql',
+    host: 'localhost',
+    port: 3306,
+    databaseName: 'orders',
+    databaseUsername: 'app',
+    containerId: null,
+    createdAt: now(),
+    updatedAt: now(),
+  },
+  {
+    id: crypto.randomUUID(),
+    connectionName: 'legacy_prod',
+    host: 'localhost',
+    port: 5433,
+    databaseName: 'legacy',
+    databaseUsername: 'admin',
+    containerId: null,
+    createdAt: now(),
+    updatedAt: now(),
+  },
+]
+
+// Finds a mock data source by id, or throws a 404 like the backend would.
+function findMockDataSource(id) {
+  const dataSource = mockDataSources.find((d) => d.id === id)
+  if (!dataSource) {
+    throw mockError(404, `Data source not found with ID: ${id}`)
+  }
+  return dataSource
+}
+
+// Builds a fake connection test result. Port 5433 (used by "legacy_prod") is "refused".
+function mockTestResult({ host, port, databaseName }) {
+  const success = Number(port) !== 5433
+  return {
+    success,
+    message: success ? 'Connection successful' : `Connection refused: ${host}:${port}`,
+    databaseType: Number(port) === 3306 ? 'MySQL' : 'PostgreSQL',
+    latencyMs: success ? 12 + Math.floor(Math.random() * 69) : null, // 12–80 ms
+    host,
+    port: Number(port),
+    databaseName,
+  }
+}
+
+// GET /api/datasources — list all data sources.
+export async function listDataSources() {
+  if (isMockMode()) {
+    await wait(MOCK_DELAY)
+    return copy(mockDataSources)
+  }
+  const response = await http.get('/api/datasources')
+  return response.data
+}
+
+// POST /api/datasources — save a new data source.
+// request = { connectionName, host, port, databaseName, databaseUsername, databasePassword }
+export async function createDataSource(request) {
+  if (isMockMode()) {
+    await wait(MOCK_DELAY)
+    if (mockDataSources.some((d) => d.connectionName === request.connectionName)) {
+      throw mockError(409, `A data source named "${request.connectionName}" already exists`)
+    }
+    const dataSource = {
+      ...request,
+      port: Number(request.port),
+      id: crypto.randomUUID(),
+      containerId: null,
+      createdAt: now(),
+      updatedAt: now(),
+    }
+    // Never keep the password (the backend never returns it either).
+    delete dataSource.databasePassword
+    mockDataSources.push(dataSource)
+    return copy(dataSource)
+  }
+  const response = await http.post('/api/datasources', request)
+  return response.data
+}
+
+// DELETE /api/datasources/{id} — delete a data source. The backend returns nothing (204).
+export async function deleteDataSource(id) {
+  if (isMockMode()) {
+    await wait(MOCK_DELAY)
+    const index = mockDataSources.indexOf(findMockDataSource(id))
+    mockDataSources.splice(index, 1)
+    return
+  }
+  await http.delete(`/api/datasources/${id}`)
+}
+
+// POST /api/datasources/{id}/test — try to connect with a saved data source.
+// Returns { success, message, databaseType, latencyMs, host, port, databaseName }.
+export async function testDataSource(id) {
+  if (isMockMode()) {
+    await wait(MOCK_DELAY)
+    return mockTestResult(findMockDataSource(id))
+  }
+  const response = await http.post(`/api/datasources/${id}/test`)
+  return response.data
+}
+
+// POST /api/datasources/test — try a connection BEFORE saving it (same body as create).
+export async function testDataSourceConfig(request) {
+  if (isMockMode()) {
+    await wait(MOCK_DELAY)
+    return mockTestResult(request)
+  }
+  const response = await http.post('/api/datasources/test', request)
+  return response.data
+}
+
+// POST /api/sandboxes/{sandboxId}/containers/{containerId}/datasource/{dataSourceId}
+// Links a data source to a container. Returns the updated data source.
+export async function linkDataSource(sandboxId, containerId, dataSourceId) {
+  if (isMockMode()) {
+    await wait(MOCK_DELAY)
+    const dataSource = findMockDataSource(dataSourceId)
+    dataSource.containerId = containerId
+    dataSource.updatedAt = now()
+    return copy(dataSource)
+  }
+  const response = await http.post(
+    `/api/sandboxes/${sandboxId}/containers/${containerId}/datasource/${dataSourceId}`,
+  )
   return response.data
 }

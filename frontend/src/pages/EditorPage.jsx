@@ -7,8 +7,10 @@
 // - Layout toggles (Split / Side by side / Editor only) and Focus mode.
 // - "Check Risk" lists risky operations (DROP, RENAME, ...) and underlines their lines;
 //   Apply Migration shows the same check and needs a tick-box when risks are HIGH.
+//   The check runs on the server (POST /api/analysis/migration-risk) and falls back to
+//   the browser check in mock mode or when the server can't be reached.
 // - "Load demo script" puts a breaking example migration in the editor.
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import SqlEditor from '../components/SqlEditor.jsx'
 import ResultsTable from '../components/ResultsTable.jsx'
@@ -20,7 +22,7 @@ import {
   isMockMode,
 } from '../services/api.js'
 import { listScripts, saveScript, deleteScript, getScript } from '../services/scripts.js'
-import { analyzeMigration, countByLevel } from '../services/migrationRisk.js'
+import { analyzeMigrationWithFallback } from '../services/migrationRisk.js'
 
 const DEFAULT_SQL = '-- Write your migration script here\nSELECT * FROM customers;'
 const CURRENT_CONTAINER_KEY = 'shadowbase.currentContainerId'
@@ -28,6 +30,7 @@ const HISTORY_KEY = 'shadowbase.queryHistory'
 const MAX_HISTORY = 20
 const LAYOUT_KEY = 'shadowbase.editorLayout'
 const MAX_FILE_BYTES = 1024 * 1024 // 1 MB limit for "Open .sql"
+const CONFIRM_CHECK_DELAY_MS = 400 // wait this long after typing before checking again
 
 // The example breaking migration for the demo ("Load demo script" button).
 const DEMO_NAME = 'demo_merge_customer_profiles'
@@ -91,11 +94,24 @@ function toFileName(name) {
   return name.replace(/[^\w.-]+/g, '_') || 'script'
 }
 
-// The summary line for a list of findings, e.g. "2 high, 1 medium, 0 low risks".
-function riskSummary(findings) {
-  if (findings.length === 0) return 'No risky operations found ✓'
-  const counts = countByLevel(findings)
-  return `${counts.high} high, ${counts.medium} medium, ${counts.low} low risks`
+// The summary line for a risk check, e.g. "2 high, 1 medium, 0 low risks".
+// "summary" is { high, medium, low, total, hasBreakingRisks }.
+function riskSummary(summary) {
+  if (summary.total === 0) return 'No risky operations found ✓'
+  return `${summary.high} high, ${summary.medium} medium, ${summary.low} low risks`
+}
+
+// Small label saying who did the check: the server (green) or the browser (grey).
+// For the local check the tooltip explains why (mock mode, or the server error).
+function RiskSourceLabel({ result }) {
+  if (result.source === 'server') {
+    return <span className="check-source server">Checked by server</span>
+  }
+  return (
+    <span className="check-source local" title={result.reason || 'Mock mode: checked in the browser'}>
+      Checked locally
+    </span>
+  )
 }
 
 // Shows a list of risk findings. Clicking one calls onSelect(line) to jump there.
@@ -106,11 +122,23 @@ function RiskFindings({ findings, onSelect }) {
     <ul className="risk-list">
       {findings.map((finding, index) => (
         <li key={index}>
-          <button className="risk-item" onClick={() => onSelect(finding.line)}>
+          {/* Findings without a line number can't be jumped to. */}
+          <button
+            className="risk-item"
+            onClick={() => finding.line && onSelect(finding.line)}
+            disabled={!finding.line}
+          >
             {/* e.g. "level-high" makes the badge red */}
             <span className={`level-badge level-${finding.level}`}>{finding.level}</span>
-            <span className="risk-line-number">Line {finding.line}</span>
+            <span className="risk-line-number">{finding.line ? `Line ${finding.line}` : 'Line ?'}</span>
+            {finding.table && <span className="table-tag">{finding.table}</span>}
             <span className="risk-message">{finding.message}</span>
+            {/* The statement on one line, cut off with "..."; hover to see all of it. */}
+            {finding.statement && (
+              <code className="statement-box" title={finding.statement}>
+                {finding.statement}
+              </code>
+            )}
           </button>
         </li>
       ))}
@@ -143,7 +171,12 @@ function EditorPage({ focusMode, onToggleFocusMode }) {
   const [riskAcknowledged, setRiskAcknowledged] = useState(false)
 
   // ---- Risk check ----
-  const [riskFindings, setRiskFindings] = useState(null) // null = the panel is closed
+  // The last "Check Risk" result: { source, reason, summary, findings }. null = panel closed.
+  const [riskResult, setRiskResult] = useState(null)
+  const [isCheckingRisk, setIsCheckingRisk] = useState(false)
+  const riskRequestRef = useRef(0) // counts Check Risk clicks, to ignore old answers
+  // The risk check shown in the Apply confirmation, plus the "sql" it was made for.
+  const [confirmRisk, setConfirmRisk] = useState(null)
   const editorRef = useRef(null) // the Monaco editor (set in handleEditorMount)
   const monacoRef = useRef(null) // the Monaco library (for monaco.Range)
   const decorationsRef = useRef(null) // the current coloured underlines
@@ -223,7 +256,8 @@ function EditorPage({ focusMode, onToggleFocusMode }) {
 
     const decorations = findings
       .filter((finding) => finding.level === 'high' || finding.level === 'medium')
-      .filter((finding) => finding.line <= model.getLineCount())
+      // Skip findings with no line number, or a line past the end of the text.
+      .filter((finding) => finding.line && finding.line <= model.getLineCount())
       .map((finding) => ({
         // From the start to the end of the line where the statement begins.
         range: new monaco.Range(finding.line, 1, finding.line, model.getLineMaxColumn(finding.line)),
@@ -236,6 +270,12 @@ function EditorPage({ focusMode, onToggleFocusMode }) {
     decorationsRef.current.set(decorations)
   }
 
+  // Underlines the findings only if the editor still holds the text that was checked
+  // (the user may have typed while the server was answering).
+  function showDecorationsIfCurrent(findings, checkedSql) {
+    if (editorRef.current?.getValue() === checkedSql) showRiskDecorations(findings)
+  }
+
   // Moves the editor's cursor to a line and scrolls it into view.
   function jumpToLine(line) {
     const editor = editorRef.current
@@ -245,20 +285,46 @@ function EditorPage({ focusMode, onToggleFocusMode }) {
     editor.focus()
   }
 
-  // "Check Risk" button: analyse the script, show the panel and underline the lines.
-  function handleCheckRisk() {
-    const findings = analyzeMigration(sql)
-    setRiskFindings(findings)
-    showRiskDecorations(findings)
+  // "Check Risk" button: check the script (server first, local if needed), show the panel
+  // and underline the lines.
+  async function handleCheckRisk() {
+    const checkedSql = sql
+    const requestNumber = ++riskRequestRef.current
+    setIsCheckingRisk(true)
+    const result = await analyzeMigrationWithFallback(checkedSql) // never throws
+    // If Check Risk was clicked again meanwhile, only the newest answer counts.
+    if (requestNumber !== riskRequestRef.current) return
+    setRiskResult(result)
+    setIsCheckingRisk(false)
+    showDecorationsIfCurrent(result.findings, checkedSql)
   }
 
-  // "Apply Migration" button: run the risk check, then open the confirmation panel
-  // (the panel shows the findings; see confirmFindings below).
+  // "Apply Migration" button: open the confirmation panel. The risk check for it runs in
+  // the effect below (and runs again if the text changes while the panel is open).
   function handleApplyClick() {
-    showRiskDecorations(analyzeMigration(sql))
     setRiskAcknowledged(false)
+    setConfirmRisk(null)
     setIsConfirming(true)
   }
+
+  // While the confirmation panel is open, check the current script for risks.
+  // After typing, wait a moment so we don't send a request on every key press.
+  useEffect(() => {
+    if (!isConfirming) return
+    let cancelled = false // set by the cleanup when the text changes or the panel closes
+    const timer = setTimeout(async () => {
+      const result = await analyzeMigrationWithFallback(sql)
+      if (cancelled) return // an older answer — a newer check is on its way
+      setConfirmRisk({ ...result, sql })
+      showDecorationsIfCurrent(result.findings, sql)
+    }, CONFIRM_CHECK_DELAY_MS)
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+    // showDecorationsIfCurrent only uses refs, so it doesn't need to be listed here.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isConfirming, sql])
 
   // The user picked a different container in the dropdown.
   function handleContainerChange(event) {
@@ -317,8 +383,10 @@ function EditorPage({ focusMode, onToggleFocusMode }) {
 
   // "Yes, apply" in the confirmation panel.
   async function handleConfirmMigration() {
-    // Safety net: with HIGH risks the tick-box must be ticked first.
-    if (confirmCounts.high > 0 && !riskAcknowledged) return
+    // Safety net: the check must be finished, and with HIGH / breaking risks the
+    // tick-box must be ticked first.
+    if (!confirmReady) return
+    if (needsAcknowledge && !riskAcknowledged) return
     setIsConfirming(false)
     setMigrationResult(null)
     const outcome = await executeScript()
@@ -500,11 +568,11 @@ function EditorPage({ focusMode, onToggleFocusMode }) {
     }
   }
 
-  // While the confirmation panel is open, check the current script for risks.
-  // useMemo re-runs the check only when the text (or the panel) changes.
-  const confirmFindings = useMemo(() => (isConfirming ? analyzeMigration(sql) : []), [isConfirming, sql])
-  const confirmCounts = countByLevel(confirmFindings)
-  const needsAcknowledge = confirmCounts.high > 0
+  // The confirmation's risk check is "ready" when it was made for the text in the editor now.
+  const confirmReady = isConfirming && confirmRisk !== null && confirmRisk.sql === sql
+  // High findings or hasBreakingRisks from the server → the tick-box is required.
+  const needsAcknowledge =
+    confirmReady && (confirmRisk.summary.high > 0 || confirmRisk.summary.hasBreakingRisks)
 
   return (
     <div>
@@ -535,9 +603,10 @@ function EditorPage({ focusMode, onToggleFocusMode }) {
           <button
             className="small-button"
             onClick={handleCheckRisk}
+            disabled={isCheckingRisk}
             title="List risky operations in this script (works without a sandbox)"
           >
-            Check Risk
+            {isCheckingRisk ? 'Checking...' : 'Check Risk'}
           </button>
           {/* A disabled button shows no tooltip in some browsers, so the reason is put
               on a <span> around it instead. */}
@@ -564,17 +633,18 @@ function EditorPage({ focusMode, onToggleFocusMode }) {
       </div>
 
       {/* ---- Risk check results (after "Check Risk") ---- */}
-      {riskFindings && (
+      {riskResult && (
         <div className="risk-panel">
           <div className="risk-summary">
-            <strong className={riskFindings.length === 0 ? 'risk-ok' : ''}>
-              {riskSummary(riskFindings)}
+            <strong className={riskResult.summary.total === 0 ? 'risk-ok' : ''}>
+              {riskSummary(riskResult.summary)}
             </strong>
-            <button className="small-button" onClick={() => setRiskFindings(null)}>
+            <RiskSourceLabel result={riskResult} />
+            <button className="small-button risk-close" onClick={() => setRiskResult(null)}>
               Close
             </button>
           </div>
-          <RiskFindings findings={riskFindings} onSelect={jumpToLine} />
+          <RiskFindings findings={riskResult.findings} onSelect={jumpToLine} />
         </div>
       )}
 
@@ -727,11 +797,18 @@ function EditorPage({ focusMode, onToggleFocusMode }) {
             database only. Production is never touched.
           </p>
 
-          {/* The risk check for the current script */}
-          <p className="risk-summary-line">
-            Risk check: <strong>{riskSummary(confirmFindings)}</strong>
-          </p>
-          <RiskFindings findings={confirmFindings} onSelect={jumpToLine} />
+          {/* The risk check for the current script ("Checking..." until it is ready) */}
+          {confirmReady ? (
+            <>
+              <p className="risk-summary-line">
+                Risk check: <strong>{riskSummary(confirmRisk.summary)}</strong>{' '}
+                <RiskSourceLabel result={confirmRisk} />
+              </p>
+              <RiskFindings findings={confirmRisk.findings} onSelect={jumpToLine} />
+            </>
+          ) : (
+            <p className="risk-summary-line">Checking the script for risks...</p>
+          )}
 
           {/* With HIGH risks, the user must tick this box before applying. */}
           {needsAcknowledge && (
@@ -749,7 +826,7 @@ function EditorPage({ focusMode, onToggleFocusMode }) {
             <button
               className={needsAcknowledge ? 'run-button danger-confirm' : 'run-button'}
               onClick={handleConfirmMigration}
-              disabled={needsAcknowledge && !riskAcknowledged}
+              disabled={!confirmReady || (needsAcknowledge && !riskAcknowledged)}
             >
               {needsAcknowledge ? 'I understand the risks – Apply to shadow DB' : 'Yes, apply'}
             </button>

@@ -13,6 +13,7 @@ const HEALTH_CHECK_INTERVAL_MS = 15000 // check the backend every 15 seconds
 const links = [
   { to: '/editor', label: 'SQL Editor' },
   { to: '/sandboxes', label: 'Sandboxes' },
+  { to: '/datasources', label: 'Data Sources' },
   { to: '/dashboard', label: 'Dashboard' },
   { to: '/settings', label: 'Settings' },
 ]
