@@ -204,6 +204,31 @@ class SqlReplayServiceIntegrationTest {
         );
     }
 
+    @Test
+    @Order(6)
+    void shouldCreateValidKafkaMessageForReplay() {
+
+        ShadowBaseMessage message = new ShadowBaseMessage(
+                101,
+                "INSERT",
+                "student",
+                "101, 'Test', 20",
+                "073a3b7a"
+        );
+
+        assertNotNull(message);
+        assertNotNull(message.getOperation());
+        assertEquals("INSERT", message.getOperation());
+
+        assertNotNull(message.getTable());
+        assertEquals("student", message.getTable());
+
+        assertNotNull(message.getSandboxId());
+        assertEquals("073a3b7a", message.getSandboxId());
+
+        assertNotNull(message.getData());
+    }
+
     @AfterAll
     static void cleanup() throws SQLException {
 

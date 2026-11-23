@@ -47,11 +47,20 @@ public class KafkaProducerService {
             );
 
             producer.send(record, (metadata, exception) -> {
+
                 if (exception == null) {
-                    System.out.println("Message sent successfully");
-                    System.out.println("Topic: " + metadata.topic());
-                    System.out.println("Partition: " + metadata.partition());
+
+                    System.out.println("\n----- Kafka Message Sent -----");
+
+                    System.out.println("Sandbox ID : " + message.getSandboxId());
+                    System.out.println("Message ID : " + message.getId());
+                    System.out.println("Operation  : " + message.getOperation());
+                    System.out.println("Topic      : " + metadata.topic());
+                    System.out.println("Partition  : " + metadata.partition());
+                    System.out.println("Offset     : " + metadata.offset());
+
                 } else {
+
                     System.out.println("Failed to send message");
                     exception.printStackTrace();
                 }

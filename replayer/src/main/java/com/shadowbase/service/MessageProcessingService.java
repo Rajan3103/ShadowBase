@@ -1,4 +1,5 @@
 package com.shadowbase.service;
+
 import com.shadowbase.model.ShadowBaseMessage;
 
 public class MessageProcessingService {
@@ -14,6 +15,7 @@ public class MessageProcessingService {
         System.out.println("\n----- Message Received -----");
 
         System.out.println("ID        : " + message.getId());
+        System.out.println("Sandbox ID: " + message.getSandboxId());
         System.out.println("Operation : " + message.getOperation());
         System.out.println("Table     : " + message.getTable());
         System.out.println("Data      : " + message.getData());
@@ -23,4 +25,3 @@ public class MessageProcessingService {
         sqlReplayService.replay(message);
     }
 }
-

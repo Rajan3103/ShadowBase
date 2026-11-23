@@ -9,13 +9,15 @@ public class ProducerMain {
 
         KafkaProducerService producer = new KafkaProducerService();
 
-        ShadowBaseMessage insertMessage = new ShadowBaseMessage(
+        String sandboxId = "073a3b7a";
+
+        ShadowBaseMessage insertMessage =
+                new ShadowBaseMessage(
                         101,
                         "INSERT",
                         "student",
-                        "'Rohan', 20",
-                        "073a3b7a"
-
+                        "101, 'Rohan', 20",
+                        sandboxId
                 );
 
         producer.sendMessage(insertMessage);
