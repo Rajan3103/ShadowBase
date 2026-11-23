@@ -2,10 +2,15 @@
 // live traffic (shadow replay) before you apply it.
 //
 // Simple regex-based check. A JSqlParser-based backend check can replace this later via POST /api/analysis.
+// That server check now exists (POST /api/analysis/migration-risk): the page calls
+// analyzeMigrationWithFallback(sql), which asks the server first and uses this local check
+// in mock mode or when the server can't be reached.
 //
 // analyzeMigration(sql) returns an array of findings:
-//   { level: "high" | "medium" | "low", rule, message, line }
-//   line = the line number (starting at 1) where the statement begins.
+//   { level: "high" | "medium" | "low", rule, message, line, statement, table }
+//   line      = the line number (starting at 1) where the statement begins
+//   statement = the statement's text on one line (comments before it are left out)
+//   table     = the table it changes, or null if unknown
 //
 // Steps:
 //   1. Remove comments (-- and /* */) and blank out text inside '...' strings,
@@ -15,6 +20,7 @@
 //
 // Limits (it is only regex): PostgreSQL $$...$$ blocks are not understood, and a
 // statement split across odd syntax may be missed. Treat it as a helper, not a guarantee.
+import { isMockMode, analyzeMigrationRemote, getErrorMessage } from './api.js'
 
 // Matches one table/column name, with or without quotes: users, "Users", `users`, [users], public.users
 const NAME = '((?:[`"\\[]?[\\w$]+[`"\\]]?\\.)?[`"\\[]?[\\w$]+[`"\\]]?)'
@@ -80,29 +86,41 @@ function stripCommentsAndStrings(sql) {
 }
 
 // ---------- Step 2: split into statements ----------
-// Returns [{ text, line }] for every statement that is not empty.
+// Returns [{ text, line, start, end }] for every statement that is not empty.
+//   start / end = where the statement is in the text, so we can cut the ORIGINAL
+//   statement out of the script (step 1 keeps every character in the same place).
 // (Strings were blanked in step 1, so a ";" inside a string can't split a statement.)
 function splitStatements(cleanSql) {
   const statements = []
   let line = 1 // the line we are on while walking through the text
   let current = '' // text of the statement being collected
   let startLine = null // line of its first non-space character
+  let startIndex = null // position of its first non-space character
 
-  for (const ch of cleanSql) {
+  for (let i = 0; i < cleanSql.length; i++) {
+    const ch = cleanSql[i]
     if (ch === ';') {
       // End of a statement: save it if it has any content.
-      if (current.trim()) statements.push({ text: current.trim(), line: startLine })
+      if (current.trim()) {
+        statements.push({ text: current.trim(), line: startLine, start: startIndex, end: i })
+      }
       current = ''
       startLine = null
+      startIndex = null
     } else {
-      // Remember the line of the first real character.
-      if (startLine === null && /\S/.test(ch)) startLine = line
+      // Remember where the first real character is.
+      if (startLine === null && /\S/.test(ch)) {
+        startLine = line
+        startIndex = i
+      }
       current += ch
     }
     if (ch === '\n') line++
   }
   // The last statement may not end with ";".
-  if (current.trim()) statements.push({ text: current.trim(), line: startLine })
+  if (current.trim()) {
+    statements.push({ text: current.trim(), line: startLine, start: startIndex, end: cleanSql.length })
+  }
   return statements
 }
 
@@ -127,7 +145,7 @@ function splitTopLevelCommas(text) {
 
 // ---------- Step 3a: checks for one part of an ALTER TABLE statement ----------
 // "clause" is e.g. 'DROP COLUMN phone' or 'ADD COLUMN city VARCHAR(100)'.
-// add(level, rule, message) records a finding.
+// add(level, rule, message) records a finding (the table is added by the caller).
 function checkAlterClause(clause, table, add) {
   let m
 
@@ -202,6 +220,7 @@ function checkAlterClause(clause, table, add) {
 }
 
 // ---------- Step 3b: checks for one whole statement ----------
+// add(level, rule, message, table) records a finding.
 function checkStatement(text, add) {
   let m
 
@@ -209,8 +228,10 @@ function checkStatement(text, add) {
   m = text.match(new RegExp(`^ALTER\\s+TABLE\\s+(?:IF\\s+EXISTS\\s+)?(?:ONLY\\s+)?${NAME}\\s+([\\s\\S]*)$`, 'i'))
   if (m) {
     const table = cleanName(m[1])
+    // Every finding in an ALTER TABLE statement is about this table.
+    const addWithTable = (level, rule, message) => add(level, rule, message, table)
     for (const clause of splitTopLevelCommas(m[2])) {
-      checkAlterClause(clause, table, add)
+      checkAlterClause(clause, table, addWithTable)
     }
     return
   }
@@ -219,33 +240,36 @@ function checkStatement(text, add) {
   // DROP TABLE [IF EXISTS] a, b [CASCADE]
   m = text.match(/^DROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?([\s\S]+?)(?:\s+(?:CASCADE|RESTRICT))?$/i)
   if (m) {
-    const tables = m[1].split(',').map((name) => `"${cleanName(name.trim())}"`).join(', ')
+    const names = m[1].split(',').map((name) => cleanName(name.trim()))
+    const tables = names.map((name) => `"${name}"`).join(', ')
     add('high', 'DROP_TABLE',
-      `Dropping table ${tables} will break every live query and insert that still uses it, and its data is gone.`)
+      `Dropping table ${tables} will break every live query and insert that still uses it, and its data is gone.`,
+      names.join(', '))
     return
   }
   if ((m = text.match(new RegExp(`^TRUNCATE\\s+(?:TABLE\\s+)?(?:ONLY\\s+)?${NAME}`, 'i')))) {
     add('high', 'TRUNCATE',
-      `Truncating "${cleanName(m[1])}" deletes every row in it at once.`)
+      `Truncating "${cleanName(m[1])}" deletes every row in it at once.`, cleanName(m[1]))
     return
   }
   // MySQL: RENAME TABLE a TO b
   if ((m = text.match(new RegExp(`^RENAME\\s+TABLE\\s+${NAME}\\s+TO\\s+${NAME}`, 'i')))) {
     add('high', 'RENAME_TABLE',
-      `Renaming table "${cleanName(m[1])}" to "${cleanName(m[2])}" will break every live query that still uses the old name.`)
+      `Renaming table "${cleanName(m[1])}" to "${cleanName(m[2])}" will break every live query that still uses the old name.`,
+      cleanName(m[1]))
     return
   }
   if ((m = text.match(new RegExp(`^DELETE\\s+FROM\\s+(?:ONLY\\s+)?${NAME}`, 'i')))) {
     if (!/\bWHERE\b/i.test(text)) {
       add('high', 'DELETE_WITHOUT_WHERE',
-        `DELETE on "${cleanName(m[1])}" has no WHERE clause, so it removes every row.`)
+        `DELETE on "${cleanName(m[1])}" has no WHERE clause, so it removes every row.`, cleanName(m[1]))
     }
     return
   }
   if ((m = text.match(new RegExp(`^UPDATE\\s+(?:ONLY\\s+)?${NAME}`, 'i')))) {
     if (!/\bWHERE\b/i.test(text)) {
       add('high', 'UPDATE_WITHOUT_WHERE',
-        `UPDATE on "${cleanName(m[1])}" has no WHERE clause, so it changes every row.`)
+        `UPDATE on "${cleanName(m[1])}" has no WHERE clause, so it changes every row.`, cleanName(m[1]))
     }
     return
   }
@@ -263,7 +287,8 @@ function checkStatement(text, add) {
     const on = text.match(new RegExp(`\\bON\\s+(?:ONLY\\s+)?${NAME}`, 'i'))
     const table = on ? `"${cleanName(on[1])}"` : 'the table'
     add('low', 'CREATE_INDEX_LOCKS',
-      `Creating an index without CONCURRENTLY blocks writes to ${table} on PostgreSQL until it finishes.`)
+      `Creating an index without CONCURRENTLY blocks writes to ${table} on PostgreSQL until it finishes.`,
+      on ? cleanName(on[1]) : null)
   }
 }
 
@@ -274,8 +299,11 @@ export function analyzeMigration(sql) {
   const statements = splitStatements(stripCommentsAndStrings(sql || ''))
 
   for (const statement of statements) {
-    // "add" records a finding for this statement (with its start line).
-    const add = (level, rule, message) => findings.push({ level, rule, message, line: statement.line })
+    // The original statement text (with its strings), squeezed onto one line.
+    const original = (sql || '').slice(statement.start, statement.end).replace(/\s+/g, ' ').trim()
+    // "add" records a finding for this statement (with its start line and text).
+    const add = (level, rule, message, table = null) =>
+      findings.push({ level, rule, message, line: statement.line, statement: original, table })
     checkStatement(statement.text, add)
   }
   return findings
@@ -284,6 +312,66 @@ export function analyzeMigration(sql) {
 // Counts findings per level: { high, medium, low }.
 export function countByLevel(findings) {
   const counts = { high: 0, medium: 0, low: 0 }
-  for (const finding of findings) counts[finding.level] += 1
+  for (const finding of findings) {
+    if (finding.level in counts) counts[finding.level] += 1
+  }
   return counts
+}
+
+// ---------- Server check with local fallback ----------
+
+// Makes one finding look the same whichever check produced it:
+// level always lowercase, line a number (or null), missing fields as null.
+function normalizeFinding(finding) {
+  const line = Number(finding?.line)
+  return {
+    level: String(finding?.level || 'low').toLowerCase(),
+    rule: finding?.rule ?? '',
+    message: finding?.message ?? '',
+    line: Number.isInteger(line) && line > 0 ? line : null,
+    statement: finding?.statement || null,
+    table: finding?.table || null,
+  }
+}
+
+// Runs the local (browser) check and returns it in the same shape as the server check.
+// "reason" is set when we fell back because the server failed.
+function localResult(sql, reason) {
+  const findings = analyzeMigration(sql).map(normalizeFinding)
+  const counts = countByLevel(findings)
+  return {
+    source: 'local',
+    reason: reason || null,
+    summary: { ...counts, total: findings.length, hasBreakingRisks: counts.high > 0 },
+    findings,
+  }
+}
+
+// Checks a migration script for risks.
+// - Real backend: POST /api/analysis/migration-risk → { source: "server", summary, findings }
+// - Mock mode, or the server request fails: the local check → { source: "local", reason?, ... }
+// summary = { high, medium, low, total, hasBreakingRisks }
+export async function analyzeMigrationWithFallback(sql) {
+  if (isMockMode()) return localResult(sql, null)
+
+  try {
+    const data = await analyzeMigrationRemote(sql)
+    const findings = (Array.isArray(data?.findings) ? data.findings : []).map(normalizeFinding)
+    const counts = countByLevel(findings)
+    return {
+      source: 'server',
+      reason: null,
+      summary: {
+        // Prefer the server's own counts; use our count if a number is missing.
+        high: data?.highRisks ?? counts.high,
+        medium: data?.mediumRisks ?? counts.medium,
+        low: data?.lowRisks ?? counts.low,
+        total: data?.totalRisks ?? findings.length,
+        hasBreakingRisks: Boolean(data?.hasBreakingRisks) || counts.high > 0,
+      },
+      findings,
+    }
+  } catch (err) {
+    return localResult(sql, `Server check failed: ${getErrorMessage(err)}`)
+  }
 }

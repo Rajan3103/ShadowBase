@@ -7,6 +7,7 @@ import { Routes, Route, Navigate } from 'react-router-dom'
 import Sidebar from './components/Sidebar.jsx'
 import EditorPage from './pages/EditorPage.jsx'
 import SandboxesPage from './pages/SandboxesPage.jsx'
+import DataSourcesPage from './pages/DataSourcesPage.jsx'
 import DashboardPage from './pages/DashboardPage.jsx'
 import SettingsPage from './pages/SettingsPage.jsx'
 
@@ -59,6 +60,7 @@ function App() {
             element={<EditorPage focusMode={focusMode} onToggleFocusMode={toggleFocusMode} />}
           />
           <Route path="/sandboxes" element={<SandboxesPage />} />
+          <Route path="/datasources" element={<DataSourcesPage />} />
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/settings" element={<SettingsPage />} />
         </Routes>

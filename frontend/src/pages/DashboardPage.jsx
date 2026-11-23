@@ -3,6 +3,8 @@
 // The numbers come from subscribeToMetrics() in services/metrics.js: mock data, or live data
 // from the backend if "Dashboard data source" is set to Live on the Settings page.
 // A badge next to the title shows which one you are looking at.
+// Reset: in live mode it asks the backend to reset (POST /api/metrics/reset) and clears the
+// chart and the console; in mock mode it just starts counting again from zero.
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
@@ -17,7 +19,7 @@ import {
 } from 'recharts'
 import { subscribeToMetrics, getMetricsSource } from '../services/metrics.js'
 import ErrorConsole from '../components/ErrorConsole.jsx'
-import { CURRENT_SANDBOX_KEY } from '../services/api.js'
+import { CURRENT_SANDBOX_KEY, resetMetrics, getErrorMessage } from '../services/api.js'
 
 const MAX_POINTS = 30 // how many updates the chart keeps
 const BREAKING_THRESHOLD = 5 // error rate (%) shown as the dashed line
@@ -77,6 +79,10 @@ function DashboardPage() {
   const [showConsole, setShowConsole] = useState(readShowConsole)
   // The data source chosen in Settings ("mock" or "polling"), read when the page opens.
   const [configuredSource] = useState(getMetricsSource)
+  // Goes up by 1 after a live Reset; giving the console a new "key" starts it again empty.
+  const [consoleKey, setConsoleKey] = useState(0)
+  const [isResetting, setIsResetting] = useState(false)
+  const [resetError, setResetError] = useState(null)
 
   // Subscribe to metrics while not paused. React runs the cleanup (unsubscribe) when
   // the page closes, when Pause is clicked, or when Reset restarts it.
@@ -94,11 +100,34 @@ function DashboardPage() {
     return unsubscribe
   }, [isPaused, resetKey])
 
-  // Reset: clear everything and start counting again from zero.
-  function handleReset() {
+  // Clears the cards and chart and restarts the subscription (starts again from zero).
+  function resetLocally() {
     setLatest(null)
     setHistory([])
     setResetKey((key) => key + 1)
+  }
+
+  // Reset button.
+  // Live data (polling is working): ask the backend to reset, then clear the chart and console.
+  // Mock data, or live data that fell back to mock: just reset locally, as before.
+  async function handleReset() {
+    setResetError(null)
+    const isLive = configuredSource === 'polling' && latest?.source !== 'mock-fallback'
+    if (!isLive) {
+      resetLocally()
+      return
+    }
+
+    setIsResetting(true)
+    try {
+      await resetMetrics()
+      resetLocally()
+      setConsoleKey((key) => key + 1) // empty console + a fresh list of seen error ids
+    } catch (err) {
+      setResetError(`Reset failed: ${getErrorMessage(err)}`)
+    } finally {
+      setIsResetting(false)
+    }
   }
 
   // Show or hide the error console, and remember the choice.
@@ -114,6 +143,8 @@ function DashboardPage() {
 
   const status = latest ? getStatus(latest.errorRate) : null
   const badge = getSourceBadge(latest?.source ?? configuredSource, latest?.reason)
+  // The pulse dot shows only while live polling is working (and not paused).
+  const isLiveWorking = latest?.source === 'polling' && !isPaused
 
   return (
     <div>
@@ -129,8 +160,8 @@ function DashboardPage() {
           <button className="small-button" onClick={() => setIsPaused((paused) => !paused)}>
             {isPaused ? 'Resume' : 'Pause'}
           </button>
-          <button className="small-button" onClick={handleReset}>
-            Reset
+          <button className="small-button" onClick={handleReset} disabled={isResetting}>
+            {isResetting ? 'Resetting...' : 'Reset'}
           </button>
           <button className="small-button" onClick={handleToggleConsole} aria-pressed={showConsole}>
             Show console: {showConsole ? 'On' : 'Off'}
@@ -151,6 +182,9 @@ function DashboardPage() {
         )}
         {isPaused && <span className="paused-label"> · Paused</span>}
       </p>
+
+      {/* Shown only if the live Reset request failed */}
+      {resetError && <div className="card-error">{resetError}</div>}
 
       {/* ---- The four metric cards ("—" until the first update arrives) ---- */}
       <div className="metric-grid">
@@ -173,6 +207,16 @@ function DashboardPage() {
           </p>
         </div>
       </div>
+
+      {/* ---- When the numbers were last updated (+ pulse dot while live) ---- */}
+      <p className="last-updated">
+        {isLiveWorking && (
+          <span className="live-indicator">
+            <span className="live-pulse" aria-hidden="true" /> Live
+          </span>
+        )}
+        Last updated: {latest ? formatTime(latest.ts) : '—'}
+      </p>
 
       {/* ---- Error-rate chart ---- */}
       <div className="chart-panel">
@@ -218,7 +262,7 @@ function DashboardPage() {
 
       {/* ---- Live SQL errors from replayed traffic (has its own Pause/Clear) ---- */}
       {/* Hiding it removes it from the page, which also stops its subscription. */}
-      {showConsole && <ErrorConsole />}
+      {showConsole && <ErrorConsole key={consoleKey} />}
     </div>
   )
 }

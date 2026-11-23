@@ -8,8 +8,9 @@
 // Every metrics update looks like: { replayed, failed, errorRate, ts, source, reason? }
 //   replayed  — total queries replayed against the shadow database
 //   failed    — total queries that failed
-//   errorRate — failed / replayed * 100, rounded to 1 decimal
-//   ts        — time of the update in milliseconds (Date.now())
+//   errorRate — a percentage (2.4 means 2.4%). The backend already sends it as a
+//               percentage, so we never multiply it by 100 again.
+//   ts        — time of the update in milliseconds (the backend's lastUpdatedTs, or Date.now())
 //   source    — "mock" | "polling" | "mock-fallback"
 //   reason    — only with "mock-fallback": why live data stopped
 import { getMetrics, getRecentErrors, getErrorMessage } from './api.js'
@@ -17,6 +18,8 @@ import { getMetrics, getRecentErrors, getErrorMessage } from './api.js'
 const UPDATE_INTERVAL_MS = 2000 // metrics: every 2 seconds
 const ERRORS_POLL_INTERVAL_MS = 3000 // errors: every 3 seconds
 const MAX_FAILURES = 3 // failed requests in a row before we give up on live data
+const ERRORS_LIMIT = 50 // how many recent errors to ask the backend for
+const MAX_SEEN_IDS = 1000 // how many error ids we remember (oldest are forgotten first)
 
 // ---------- The data-source setting (written by the Settings page) ----------
 
@@ -51,6 +54,16 @@ function toNumber(value) {
   return Number.isFinite(number) ? number : 0
 }
 
+// Turns a backend timestamp (epoch milliseconds, or a date text) into milliseconds.
+// Falls back to "now" if it is missing or can't be read.
+function toTimestamp(value) {
+  if (value == null || value === '') return Date.now()
+  const asNumber = Number(value)
+  if (Number.isFinite(asNumber)) return asNumber
+  const parsed = Date.parse(value)
+  return Number.isFinite(parsed) ? parsed : Date.now()
+}
+
 // =====================================================================
 // Metrics
 // =====================================================================
@@ -74,7 +87,7 @@ function subscribeMock(onUpdate, extra = { source: 'mock' }) {
 }
 
 // ---------- Polling source ----------
-// Every 2 seconds: GET /api/metrics → { replayed, failed, errorRate }.
+// Every 2 seconds: GET /api/metrics → { replayed, failed, errorRate, lastUpdatedTs }.
 // After 3 failures in a row: stop polling and switch to mock data.
 function subscribePolling(onUpdate) {
   let failures = 0 // failed requests in a row
@@ -92,8 +105,11 @@ function subscribePolling(onUpdate) {
       const update = buildUpdate(toNumber(data?.replayed), toNumber(data?.failed), {
         source: 'polling',
       })
-      // Use the backend's error rate if it sent one; otherwise keep the one we calculated.
+      // Use the backend's error rate if it sent one (it is ALREADY a percentage, so we
+      // use it as it is); otherwise keep the one we calculated.
       if (data?.errorRate != null) update.errorRate = toNumber(data.errorRate)
+      // Use the backend's own "last updated" time if it sent one.
+      update.ts = toTimestamp(data?.lastUpdatedTs)
       onUpdate(update)
     } catch (err) {
       if (stopped) return
@@ -181,11 +197,14 @@ function subscribeErrorsMock(onError, extra = { source: 'mock' }) {
 }
 
 // ---------- Polling error source ----------
-// Every 3 seconds: GET /api/metrics/errors → array of errors.
-// Only errors whose id we have not seen before are sent on.
+// Every 3 seconds: GET /api/metrics/errors?limit=50 → array of errors.
+// Only errors whose id we have not seen before are sent on, oldest first,
+// so the console reads from top to bottom.
 // After 3 failures in a row: stop polling and switch to mock errors.
+// Each subscription has its own list of seen ids, so subscribing again (e.g. after a
+// Dashboard Reset) starts with an empty list and every new error shows up.
 function subscribeErrorsPolling(onError) {
-  const seenIds = new Set() // ids already sent to the console
+  const seenIds = new Set() // ids already sent to the console (max 1000)
   let failures = 0
   let busy = false
   let stopped = false
@@ -195,23 +214,36 @@ function subscribeErrorsPolling(onError) {
     if (busy) return
     busy = true
     try {
-      const list = await getRecentErrors()
+      const list = await getRecentErrors(ERRORS_LIMIT)
       if (stopped) return
       failures = 0
-      for (const error of Array.isArray(list) ? list : []) {
-        if (error?.id == null || seenIds.has(error.id)) continue // skip seen (or id-less) errors
-        seenIds.add(error.id)
-        // Fill in anything missing so the console can always draw the line.
-        onError({
+
+      // 1. Keep only the errors we have not sent before (and that have an id).
+      const newErrors = (Array.isArray(list) ? list : [])
+        .filter((error) => error?.id != null && !seenIds.has(error.id))
+        .map((error) => ({
           ...error,
-          ts: error.ts ?? Date.now(),
-          table: error.table ?? '?',
-          operation: error.operation ?? 'UNKNOWN',
+          ts: toTimestamp(error.ts), // epoch ms → a number the console can format
           sqlState: error.sqlState ?? '-',
           message: error.message ?? '',
           source: 'polling',
-        })
+          // table / operation may be null or empty; the console shows "—" for those.
+        }))
+
+      // 2. Oldest first, so the newest error ends up at the bottom of the console.
+      newErrors.sort((a, b) => a.ts - b.ts)
+
+      // 3. Remember the ids and send the errors on.
+      for (const error of newErrors) {
+        seenIds.add(error.id)
+        onError(error)
         if (stopped) return // onError might have unsubscribed us
+      }
+
+      // 4. Forget the oldest ids if we remember more than 1000 (a Set keeps insertion order).
+      for (const id of seenIds) {
+        if (seenIds.size <= MAX_SEEN_IDS) break
+        seenIds.delete(id)
       }
     } catch (err) {
       if (stopped) return
