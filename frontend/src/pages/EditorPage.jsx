@@ -9,6 +9,7 @@
 //   Apply Migration shows the same check and needs a tick-box when risks are HIGH.
 //   The check runs on the server (POST /api/analysis/migration-risk) and falls back to
 //   the browser check in mock mode or when the server can't be reached.
+//   Dropping a column that live traffic still uses a lot is marked CRITICAL, with a red banner.
 // - "Load demo script" puts a breaking example migration in the editor.
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
@@ -22,7 +23,7 @@ import {
   isMockMode,
 } from '../services/api.js'
 import { listScripts, saveScript, deleteScript, getScript } from '../services/scripts.js'
-import { analyzeMigrationWithFallback } from '../services/migrationRisk.js'
+import { analyzeMigrationWithFallback, CRITICAL_RULE } from '../services/migrationRisk.js'
 
 const DEFAULT_SQL = '-- Write your migration script here\nSELECT * FROM customers;'
 const CURRENT_CONTAINER_KEY = 'shadowbase.currentContainerId'
@@ -114,13 +115,50 @@ function RiskSourceLabel({ result }) {
   )
 }
 
+// true if the check found a dropped column that live traffic still uses a lot.
+function hasCriticalFinding(result) {
+  return result.findings.some((finding) => finding.rule === CRITICAL_RULE)
+}
+
+// The red banner shown above the findings when there is a CRITICAL finding.
+function CriticalBanner() {
+  return (
+    <div className="critical-banner" role="alert">
+      This migration drops columns that live traffic still uses.
+    </div>
+  )
+}
+
+// A small bar for a CRITICAL finding: how many queries use the column, compared with the
+// threshold. The bar's full width is 2 × threshold, so the threshold mark sits in the middle.
+function UsageBar({ count, threshold }) {
+  const percent = Math.min(100, (count / (threshold * 2)) * 100)
+  return (
+    <span className="usage-bar-row">
+      <span className="usage-bar" aria-hidden="true">
+        <span className="usage-bar-fill" style={{ width: `${percent}%` }} />
+        <span className="usage-bar-mark" />
+      </span>
+      <span className="usage-bar-text">
+        {count} queries · threshold {threshold}
+      </span>
+    </span>
+  )
+}
+
 // Shows a list of risk findings. Clicking one calls onSelect(line) to jump there.
 // Used by the "Check Risk" panel and inside the Apply Migration confirmation.
-function RiskFindings({ findings, onSelect }) {
+// CRITICAL findings (dropped heavily queried columns) are shown first.
+function RiskFindings({ findings, threshold, onSelect }) {
   if (findings.length === 0) return null
+  // Put CRITICAL findings on top; the others keep their order.
+  const sorted = [
+    ...findings.filter((finding) => finding.rule === CRITICAL_RULE),
+    ...findings.filter((finding) => finding.rule !== CRITICAL_RULE),
+  ]
   return (
     <ul className="risk-list">
-      {findings.map((finding, index) => (
+      {sorted.map((finding, index) => (
         <li key={index}>
           {/* Findings without a line number can't be jumped to. */}
           <button
@@ -128,11 +166,18 @@ function RiskFindings({ findings, onSelect }) {
             onClick={() => finding.line && onSelect(finding.line)}
             disabled={!finding.line}
           >
-            {/* e.g. "level-high" makes the badge red */}
-            <span className={`level-badge level-${finding.level}`}>{finding.level}</span>
+            {/* e.g. "level-high" makes the badge red; CRITICAL gets its own bold badge */}
+            {finding.rule === CRITICAL_RULE ? (
+              <span className="level-badge level-critical">Critical</span>
+            ) : (
+              <span className={`level-badge level-${finding.level}`}>{finding.level}</span>
+            )}
             <span className="risk-line-number">{finding.line ? `Line ${finding.line}` : 'Line ?'}</span>
             {finding.table && <span className="table-tag">{finding.table}</span>}
             <span className="risk-message">{finding.message}</span>
+            {finding.rule === CRITICAL_RULE && finding.usageCount != null && (
+              <UsageBar count={finding.usageCount} threshold={threshold} />
+            )}
             {/* The statement on one line, cut off with "..."; hover to see all of it. */}
             {finding.statement && (
               <code className="statement-box" title={finding.statement}>
@@ -571,6 +616,7 @@ function EditorPage({ focusMode, onToggleFocusMode }) {
   // The confirmation's risk check is "ready" when it was made for the text in the editor now.
   const confirmReady = isConfirming && confirmRisk !== null && confirmRisk.sql === sql
   // High findings or hasBreakingRisks from the server → the tick-box is required.
+  const confirmHasCritical = confirmReady && hasCriticalFinding(confirmRisk)
   const needsAcknowledge =
     confirmReady && (confirmRisk.summary.high > 0 || confirmRisk.summary.hasBreakingRisks)
 
@@ -635,6 +681,7 @@ function EditorPage({ focusMode, onToggleFocusMode }) {
       {/* ---- Risk check results (after "Check Risk") ---- */}
       {riskResult && (
         <div className="risk-panel">
+          {hasCriticalFinding(riskResult) && <CriticalBanner />}
           <div className="risk-summary">
             <strong className={riskResult.summary.total === 0 ? 'risk-ok' : ''}>
               {riskSummary(riskResult.summary)}
@@ -644,7 +691,11 @@ function EditorPage({ focusMode, onToggleFocusMode }) {
               Close
             </button>
           </div>
-          <RiskFindings findings={riskResult.findings} onSelect={jumpToLine} />
+          <RiskFindings
+            findings={riskResult.findings}
+            threshold={riskResult.threshold}
+            onSelect={jumpToLine}
+          />
         </div>
       )}
 
@@ -800,11 +851,16 @@ function EditorPage({ focusMode, onToggleFocusMode }) {
           {/* The risk check for the current script ("Checking..." until it is ready) */}
           {confirmReady ? (
             <>
+              {hasCriticalFinding(confirmRisk) && <CriticalBanner />}
               <p className="risk-summary-line">
                 Risk check: <strong>{riskSummary(confirmRisk.summary)}</strong>{' '}
                 <RiskSourceLabel result={confirmRisk} />
               </p>
-              <RiskFindings findings={confirmRisk.findings} onSelect={jumpToLine} />
+              <RiskFindings
+                findings={confirmRisk.findings}
+                threshold={confirmRisk.threshold}
+                onSelect={jumpToLine}
+              />
             </>
           ) : (
             <p className="risk-summary-line">Checking the script for risks...</p>
@@ -818,7 +874,10 @@ function EditorPage({ focusMode, onToggleFocusMode }) {
                 checked={riskAcknowledged}
                 onChange={(event) => setRiskAcknowledged(event.target.checked)}
               />
-              I have reviewed the high-risk changes
+              {/* Stronger wording when live traffic still uses a dropped column */}
+              {confirmHasCritical
+                ? 'I understand this will break live queries on the shadow DB'
+                : 'I have reviewed the high-risk changes'}
             </label>
           )}
 

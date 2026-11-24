@@ -466,9 +466,11 @@ export async function getDataSeedJob(sandboxId, jobId) {
 // ---------- Migration risk analysis ----------
 
 // POST /api/analysis/migration-risk — the server checks a migration script for risky operations.
+// "threshold" (optional): how many recent queries make a column "heavily queried". It is only
+// sent when it is a positive number, so older callers (sql only) keep working.
 // Returns { totalRisks, highRisks, mediumRisks, lowRisks, hasBreakingRisks,
 //           findings: [{ level, rule, message, line, statement, table }] }
-export async function analyzeMigrationRemote(sql) {
+export async function analyzeMigrationRemote(sql, threshold) {
   if (isMockMode()) {
     await wait(MOCK_DELAY)
     // Mock: run the browser-side check and shape the answer like the server's.
@@ -483,8 +485,74 @@ export async function analyzeMigrationRemote(sql) {
       findings,
     }
   }
-  const response = await http.post('/api/analysis/migration-risk', { sql })
+  const body = { sql }
+  if (typeof threshold === 'number' && threshold > 0) body.heavilyQueriedThreshold = threshold
+  const response = await http.post('/api/analysis/migration-risk', body)
   return response.data
+}
+
+// ---------- Column usage (how often live traffic uses each column) ----------
+
+// Mock usage counts: table → { column: number of recent queries }.
+const mockColumnUsage = {
+  customers: { id: 340, email: 120, phone: 45, city: 12, name: 210 },
+  orders: { id: 500, customer_id: 260, amount: 90, status: 75 },
+}
+
+// GET /api/analysis/column-usage?table=customers → { email: 120, phone: 45 } ({} if nothing).
+export async function getColumnUsage(table) {
+  if (isMockMode()) {
+    await wait(MOCK_DELAY)
+    return copy(mockColumnUsage[table] || {})
+  }
+  const response = await http.get('/api/analysis/column-usage', { params: { table } })
+  return response.data || {}
+}
+
+// POST /api/analysis/column-usage — records that a column was used "count" times.
+export async function recordColumnUsage(table, column, count = 1) {
+  if (isMockMode()) {
+    await wait(MOCK_DELAY)
+    mockColumnUsage[table] = mockColumnUsage[table] || {}
+    mockColumnUsage[table][column] = (mockColumnUsage[table][column] || 0) + count
+    return
+  }
+  await http.post('/api/analysis/column-usage', { table, column, count })
+}
+
+// POST /api/analysis/column-usage/reset — clears all recorded usage.
+export async function resetColumnUsage() {
+  if (isMockMode()) {
+    await wait(MOCK_DELAY)
+    for (const table of Object.keys(mockColumnUsage)) mockColumnUsage[table] = {}
+    return
+  }
+  await http.post('/api/analysis/column-usage/reset')
+}
+
+// ---------- Kafka Connect (Debezium CDC connector) ----------
+
+// GET /connectors/{name}/status on Kafka Connect (port 8083).
+// We call "/connect/..." and Vite forwards it to http://localhost:8083 (see vite.config.js).
+// This uses plain axios, not our "/api" client, because it is a different server.
+// Returns { registered: true, connectorState, tasks } or { registered: false } (404).
+// Any other error (e.g. Kafka Connect not running) is thrown.
+export async function getConnectorStatus(name = 'shadowbase-mysql-connector') {
+  if (isMockMode()) {
+    await wait(MOCK_DELAY)
+    return { registered: true, connectorState: 'RUNNING', tasks: [{ id: 0, state: 'RUNNING' }] }
+  }
+  try {
+    const response = await axios.get(`/connect/connectors/${name}/status`, { timeout: 5000 })
+    return {
+      registered: true,
+      connectorState: response.data?.connector?.state || 'UNASSIGNED',
+      tasks: Array.isArray(response.data?.tasks) ? response.data.tasks : [],
+    }
+  } catch (err) {
+    if (err?.response?.status === 404) return { registered: false } // not registered yet
+    throw err
+  }
 }
 
 // ---------- Data sources (saved database connections) ----------

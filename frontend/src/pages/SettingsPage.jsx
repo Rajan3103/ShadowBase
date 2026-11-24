@@ -1,5 +1,6 @@
 // SettingsPage.jsx — lets the user switch mock mode on/off and select/create a user ID.
-// It also picks where the Dashboard gets its numbers (mock or live from the backend).
+// It also picks where the Dashboard gets its numbers (mock or live from the backend), and the
+// "heavily queried" threshold used by the migration risk check and the column usage chart.
 // All settings are saved in the browser (localStorage), so they survive a page refresh.
 import { useEffect, useState } from 'react'
 import {
@@ -13,6 +14,7 @@ import {
   getErrorMessage,
 } from '../services/api.js'
 import { METRICS_SOURCE_KEY, getMetricsSource } from '../services/metrics.js'
+import { HEAVY_THRESHOLD_KEY, getHeavyThreshold } from '../services/migrationRisk.js'
 
 // Reads the saved user ID ('' if none). localStorage can throw, so we use try/catch.
 function loadUserId() {
@@ -37,6 +39,9 @@ function SettingsPage() {
   const [useMock, setUseMock] = useState(isMockMode)
   const [userId, setUserId] = useState(loadUserId)
   const [metricsSource, setMetricsSource] = useState(getMetricsSource) // "mock" | "polling"
+  // Kept as text while typing; only saved when it is a whole number of 1 or more.
+  const [heavyThreshold, setHeavyThreshold] = useState(() => String(getHeavyThreshold()))
+  const [thresholdError, setThresholdError] = useState(null)
   const [users, setUsers] = useState([])
   const [newUserEmail, setNewUserEmail] = useState('')
   const [isCreatingUser, setIsCreatingUser] = useState(false)
@@ -83,6 +88,20 @@ function SettingsPage() {
     const value = event.target.value
     setMetricsSource(value)
     save(METRICS_SOURCE_KEY, value)
+    setSaveCount((count) => count + 1)
+  }
+
+  // "Heavily queried threshold": save it only if it is a whole number ≥ 1.
+  function handleThresholdChange(event) {
+    const text = event.target.value
+    setHeavyThreshold(text)
+    const number = Number(text)
+    if (text.trim() === '' || !Number.isInteger(number) || number < 1) {
+      setThresholdError('Enter a whole number of 1 or more.')
+      return
+    }
+    setThresholdError(null)
+    save(HEAVY_THRESHOLD_KEY, String(number))
     setSaveCount((count) => count + 1)
   }
 
@@ -151,6 +170,28 @@ function SettingsPage() {
           </select>
         </label>
         <p className="settings-note">Live mode needs GET /api/metrics on the backend.</p>
+      </div>
+
+      {/* When does a column count as "heavily queried"? */}
+      <div className="settings-block">
+        <label className="settings-field">
+          Heavily queried threshold (queries)
+          <input
+            type="number"
+            min="1"
+            step="1"
+            className="text-input"
+            value={heavyThreshold}
+            onChange={handleThresholdChange}
+          />
+        </label>
+        {thresholdError ? (
+          <p className="field-error">{thresholdError}</p>
+        ) : (
+          <p className="settings-note">
+            Dropping a column used by at least this many recent queries is marked CRITICAL.
+          </p>
+        )}
       </div>
 
       {/* Available users dropdown */}
