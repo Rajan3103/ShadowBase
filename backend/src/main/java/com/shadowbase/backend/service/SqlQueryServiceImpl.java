@@ -42,12 +42,21 @@ public class SqlQueryServiceImpl implements SqlQueryService {
     private final ContainerRepository containerRepository;
     private final ContainerConnectionProvider connectionProvider;
     private final MetricsService metricsService;
+    private final ColumnUsageTracker columnUsageTracker;
 
     public SqlQueryServiceImpl(
             SandboxRepository sandboxRepository,
             ContainerRepository containerRepository,
             ContainerConnectionProvider connectionProvider) {
-        this(sandboxRepository, containerRepository, connectionProvider, null);
+        this(sandboxRepository, containerRepository, connectionProvider, null, null);
+    }
+
+    public SqlQueryServiceImpl(
+            SandboxRepository sandboxRepository,
+            ContainerRepository containerRepository,
+            ContainerConnectionProvider connectionProvider,
+            MetricsService metricsService) {
+        this(sandboxRepository, containerRepository, connectionProvider, metricsService, null);
     }
 
     @org.springframework.beans.factory.annotation.Autowired
@@ -55,11 +64,13 @@ public class SqlQueryServiceImpl implements SqlQueryService {
             SandboxRepository sandboxRepository,
             ContainerRepository containerRepository,
             ContainerConnectionProvider connectionProvider,
-            MetricsService metricsService) {
+            @org.springframework.beans.factory.annotation.Autowired(required = false) MetricsService metricsService,
+            @org.springframework.beans.factory.annotation.Autowired(required = false) ColumnUsageTracker columnUsageTracker) {
         this.sandboxRepository = sandboxRepository;
         this.containerRepository = containerRepository;
         this.connectionProvider = connectionProvider;
         this.metricsService = metricsService;
+        this.columnUsageTracker = columnUsageTracker;
     }
 
     /**
@@ -87,6 +98,10 @@ public class SqlQueryServiceImpl implements SqlQueryService {
         int maxRows = (request.getMaxRows() != null && request.getMaxRows() > 0)
                 ? Math.min(request.getMaxRows(), MAX_ALLOWED_ROWS)
                 : DEFAULT_MAX_ROWS;
+
+        if (columnUsageTracker != null) {
+            columnUsageTracker.recordQueryColumns(sql);
+        }
 
         log.info("Executing SQL query for sandbox '{}' (container: {}): {}",
                 sandboxId, container.getId(), sql.length() > 100 ? sql.substring(0, 100) + "..." : sql);

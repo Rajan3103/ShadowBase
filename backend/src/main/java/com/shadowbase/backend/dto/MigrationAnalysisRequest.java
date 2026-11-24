@@ -15,4 +15,15 @@ import lombok.NoArgsConstructor;
 public class MigrationAnalysisRequest {
 
     private String sql;
+
+    /**
+     * Optional threshold for query frequency to classify a column as heavily queried.
+     * Defaults to the server configuration if not specified.
+     */
+    private Integer heavilyQueriedThreshold;
+
+    public MigrationAnalysisRequest(String sql) {
+        this.sql = sql;
+        this.heavilyQueriedThreshold = null;
+    }
 }

@@ -59,4 +59,29 @@ class MigrationAnalysisControllerTest {
         assertEquals(1, response.getBody().getHighRisks());
         assertEquals("DROP_TABLE", response.getBody().getFindings().get(0).getRule());
     }
+
+    @Test
+    void testColumnUsageEndpointsWithTracker() {
+        com.shadowbase.backend.service.ColumnUsageTracker tracker =
+                new com.shadowbase.backend.service.ColumnUsageTrackerImpl(10);
+        MigrationAnalysisController controllerWithTracker =
+                new MigrationAnalysisController(analysisService, tracker);
+
+        // 1. Record column usage
+        com.shadowbase.backend.dto.RecordColumnUsageRequest req =
+                new com.shadowbase.backend.dto.RecordColumnUsageRequest("users", "email", 12L);
+        ResponseEntity<Void> recordRes = controllerWithTracker.recordColumnUsage(req);
+        assertEquals(HttpStatus.OK, recordRes.getStatusCode());
+
+        // 2. Query column usage
+        ResponseEntity<java.util.Map<String, Long>> getRes = controllerWithTracker.getColumnUsage("users");
+        assertEquals(HttpStatus.OK, getRes.getStatusCode());
+        assertNotNull(getRes.getBody());
+        assertEquals(12L, getRes.getBody().get("email"));
+
+        // 3. Reset column usage
+        ResponseEntity<Void> resetRes = controllerWithTracker.resetColumnUsage();
+        assertEquals(HttpStatus.OK, resetRes.getStatusCode());
+        assertEquals(0L, tracker.getQueryCount("users", "email"));
+    }
 }
