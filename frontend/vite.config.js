@@ -13,6 +13,13 @@ export default defineConfig({
         target: 'http://localhost:8080',
         changeOrigin: true,
       },
+      // "/connect/..." goes to Kafka Connect (Debezium) on port 8083, without "/connect":
+      // /connect/connectors/x/status → http://localhost:8083/connectors/x/status
+      '/connect': {
+        target: 'http://localhost:8083',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/connect/, ''),
+      },
     },
   },
 })

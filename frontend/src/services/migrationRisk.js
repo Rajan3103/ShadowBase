@@ -11,6 +11,12 @@
 //   line      = the line number (starting at 1) where the statement begins
 //   statement = the statement's text on one line (comments before it are left out)
 //   table     = the table it changes, or null if unknown
+//   column    = only for DROP_COLUMN: the dropped column
+//
+// Heavily queried columns: if a migration drops a column that live traffic still uses a lot
+// (at least "threshold" recent queries, set on the Settings page), a CRITICAL finding with
+// rule DROPPED_HEAVILY_QUERIED_COLUMN is added — by the server, or by the local fallback
+// using GET /api/analysis/column-usage.
 //
 // Steps:
 //   1. Remove comments (-- and /* */) and blank out text inside '...' strings,
@@ -20,7 +26,24 @@
 //
 // Limits (it is only regex): PostgreSQL $$...$$ blocks are not understood, and a
 // statement split across odd syntax may be missed. Treat it as a helper, not a guarantee.
-import { isMockMode, analyzeMigrationRemote, getErrorMessage } from './api.js'
+import { isMockMode, analyzeMigrationRemote, getColumnUsage, getErrorMessage } from './api.js'
+
+// ---------- The "heavily queried" threshold (Settings page) ----------
+
+export const HEAVY_THRESHOLD_KEY = 'shadowbase.heavyThreshold'
+export const DEFAULT_HEAVY_THRESHOLD = 50
+// The rule name used (by the server and by us) for dropping a heavily queried column.
+export const CRITICAL_RULE = 'DROPPED_HEAVILY_QUERIED_COLUMN'
+
+// Returns the saved threshold (a whole number of 1 or more), or 50 if none / invalid.
+export function getHeavyThreshold() {
+  try {
+    const saved = Number(localStorage.getItem(HEAVY_THRESHOLD_KEY))
+    return Number.isInteger(saved) && saved >= 1 ? saved : DEFAULT_HEAVY_THRESHOLD
+  } catch {
+    return DEFAULT_HEAVY_THRESHOLD
+  }
+}
 
 // Matches one table/column name, with or without quotes: users, "Users", `users`, [users], public.users
 const NAME = '((?:[`"\\[]?[\\w$]+[`"\\]]?\\.)?[`"\\[]?[\\w$]+[`"\\]]?)'
@@ -145,14 +168,15 @@ function splitTopLevelCommas(text) {
 
 // ---------- Step 3a: checks for one part of an ALTER TABLE statement ----------
 // "clause" is e.g. 'DROP COLUMN phone' or 'ADD COLUMN city VARCHAR(100)'.
-// add(level, rule, message) records a finding (the table is added by the caller).
+// add(level, rule, message, column?) records a finding (the table is added by the caller).
 function checkAlterClause(clause, table, add) {
   let m
 
   // ---- HIGH ----
   if ((m = clause.match(new RegExp(`^DROP\\s+COLUMN\\s+(?:IF\\s+EXISTS\\s+)?${NAME}`, 'i')))) {
     add('high', 'DROP_COLUMN',
-      `Dropping column "${cleanName(m[1])}" from "${table}" will break any live query or insert that still uses it.`)
+      `Dropping column "${cleanName(m[1])}" from "${table}" will break any live query or insert that still uses it.`,
+      cleanName(m[1]))
     return
   }
   if ((m = clause.match(new RegExp(`^RENAME\\s+COLUMN\\s+${NAME}\\s+TO\\s+${NAME}`, 'i')))) {
@@ -229,7 +253,7 @@ function checkStatement(text, add) {
   if (m) {
     const table = cleanName(m[1])
     // Every finding in an ALTER TABLE statement is about this table.
-    const addWithTable = (level, rule, message) => add(level, rule, message, table)
+    const addWithTable = (level, rule, message, column) => add(level, rule, message, table, column)
     for (const clause of splitTopLevelCommas(m[2])) {
       checkAlterClause(clause, table, addWithTable)
     }
@@ -302,8 +326,8 @@ export function analyzeMigration(sql) {
     // The original statement text (with its strings), squeezed onto one line.
     const original = (sql || '').slice(statement.start, statement.end).replace(/\s+/g, ' ').trim()
     // "add" records a finding for this statement (with its start line and text).
-    const add = (level, rule, message, table = null) =>
-      findings.push({ level, rule, message, line: statement.line, statement: original, table })
+    const add = (level, rule, message, table = null, column = null) =>
+      findings.push({ level, rule, message, line: statement.line, statement: original, table, column })
     checkStatement(statement.text, add)
   }
   return findings
@@ -324,24 +348,77 @@ export function countByLevel(findings) {
 // level always lowercase, line a number (or null), missing fields as null.
 function normalizeFinding(finding) {
   const line = Number(finding?.line)
+  const rule = finding?.rule ?? ''
+  const message = finding?.message ?? ''
+  // How many recent queries use the dropped column (CRITICAL findings only). The local
+  // check sets it directly; for the server we read it from "(120 recent queries)".
+  let usageCount = Number.isFinite(finding?.usageCount) ? finding.usageCount : null
+  if (usageCount === null && rule === CRITICAL_RULE) {
+    const match = message.match(/\((\d+)\s+recent quer/i)
+    if (match) usageCount = Number(match[1])
+  }
   return {
     level: String(finding?.level || 'low').toLowerCase(),
-    rule: finding?.rule ?? '',
-    message: finding?.message ?? '',
+    rule,
+    message,
     line: Number.isInteger(line) && line > 0 ? line : null,
     statement: finding?.statement || null,
     table: finding?.table || null,
+    column: finding?.column || null,
+    usageCount,
   }
+}
+
+// Local extra check: for every "ALTER TABLE t DROP COLUMN c" finding, look up how often
+// live traffic uses column c (GET /api/analysis/column-usage). If it's at or above the
+// threshold, return a CRITICAL finding for it. If usage can't be loaded, skip it silently.
+async function findHeavyColumnDrops(findings, threshold) {
+  const drops = findings.filter((f) => f.rule === 'DROP_COLUMN' && f.table && f.column)
+  const tables = [...new Set(drops.map((f) => f.table))]
+
+  // Load the usage of each table once: { tableName: { column: count } }.
+  const usageByTable = {}
+  for (const table of tables) {
+    try {
+      usageByTable[table] = await getColumnUsage(table)
+    } catch {
+      // Usage not available — leave this table out (no extra findings for it).
+    }
+  }
+
+  const critical = []
+  for (const drop of drops) {
+    const usage = usageByTable[drop.table]
+    if (!usage) continue
+    // Column names are compared without caring about upper/lower case.
+    const key = Object.keys(usage).find((name) => name.toLowerCase() === drop.column.toLowerCase())
+    const count = key ? Number(usage[key]) : 0
+    if (count >= threshold) {
+      critical.push({
+        ...drop,
+        level: 'high',
+        rule: CRITICAL_RULE,
+        message:
+          `CRITICAL: Dropping heavily queried column '${drop.column}' on table '${drop.table}' ` +
+          `(${count} recent queries). Live queries that still use it will fail after this migration.`,
+        usageCount: count,
+      })
+    }
+  }
+  return critical
 }
 
 // Runs the local (browser) check and returns it in the same shape as the server check.
 // "reason" is set when we fell back because the server failed.
-function localResult(sql, reason) {
-  const findings = analyzeMigration(sql).map(normalizeFinding)
+async function localResult(sql, reason, threshold) {
+  const basic = analyzeMigration(sql)
+  const critical = await findHeavyColumnDrops(basic, threshold)
+  const findings = [...basic, ...critical].map(normalizeFinding)
   const counts = countByLevel(findings)
   return {
     source: 'local',
     reason: reason || null,
+    threshold,
     summary: { ...counts, total: findings.length, hasBreakingRisks: counts.high > 0 },
     findings,
   }
@@ -350,17 +427,19 @@ function localResult(sql, reason) {
 // Checks a migration script for risks.
 // - Real backend: POST /api/analysis/migration-risk → { source: "server", summary, findings }
 // - Mock mode, or the server request fails: the local check → { source: "local", reason?, ... }
-// summary = { high, medium, low, total, hasBreakingRisks }
+// summary = { high, medium, low, total, hasBreakingRisks }; threshold = the heavy-column setting.
 export async function analyzeMigrationWithFallback(sql) {
-  if (isMockMode()) return localResult(sql, null)
+  const threshold = getHeavyThreshold()
+  if (isMockMode()) return localResult(sql, null, threshold)
 
   try {
-    const data = await analyzeMigrationRemote(sql)
+    const data = await analyzeMigrationRemote(sql, threshold)
     const findings = (Array.isArray(data?.findings) ? data.findings : []).map(normalizeFinding)
     const counts = countByLevel(findings)
     return {
       source: 'server',
       reason: null,
+      threshold,
       summary: {
         // Prefer the server's own counts; use our count if a number is missing.
         high: data?.highRisks ?? counts.high,
@@ -372,6 +451,6 @@ export async function analyzeMigrationWithFallback(sql) {
       findings,
     }
   } catch (err) {
-    return localResult(sql, `Server check failed: ${getErrorMessage(err)}`)
+    return localResult(sql, `Server check failed: ${getErrorMessage(err)}`, threshold)
   }
 }

@@ -10,6 +10,7 @@ Write and test migration scripts against shadow database containers, and watch l
   - Run queries (button or **Ctrl+Enter** / **Cmd+Enter**) and see results with a row count, time and message
   - **Apply Migration** with an in-page safety confirmation
   - **Check Risk**: lists risky operations (DROP, RENAME, type changes, …) with level, line, table and statement; click a finding to jump to its line. Risky lines are underlined in the editor. Apply Migration requires a tick-box when there are high / breaking risks
+  - **Heavily queried columns**: dropping a column that live traffic still uses (at least the threshold from Settings) shows a bold **CRITICAL** finding on top, a usage bar (`120 queries · threshold 50`) and a red banner
   - **Load demo script**: a breaking example migration for demos
   - History of the last 20 scripts you ran
   - Save, load and delete named scripts; **Open** a `.sql` file and **Export** to `.sql`
@@ -25,14 +26,17 @@ Write and test migration scripts against shadow database containers, and watch l
   - **Link to active container** and **Delete** (with an inline confirm)
   - **Add data source** form with **Test connection** before saving (the password is never shown or stored in the browser)
 - **Dashboard**
+  - **CDC pipeline status**: MySQL source (binlog) → Debezium connector → Kafka topic → Replayer → Shadow DB, each with a coloured status; the connector status comes from Kafka Connect every 10 seconds (**Check now** to refresh); a failed task shows its error under **Details**, and an unregistered connector shows the command to register it
   - Live metrics: queries replayed, failed queries, error rate and status
   - Badge showing the data source: Mock data / Live / Live unavailable (fallback); "Last updated" time and a pulse dot while live
   - Error-rate chart with a 5% warning line
   - **Reset**: in live mode also resets the backend counters and clears the console
+  - **Column usage**: bar chart of how many recent queries used each column of a table (red at or above the heavy threshold), refreshed every 10 seconds, with **Reset usage**
   - Live SQL error console with filters and a **Copy** button per line (can be shown or hidden)
 - **Settings**
   - Turn mock mode on or off
   - Dashboard data source: Mock or Live from backend
+  - **Heavily queried threshold (queries)**: default 50; dropping a column used by at least this many recent queries is CRITICAL (used by the risk check and the column usage chart)
   - Choose, enter or create a user ID
 - **Sidebar**: backend status (Online / Offline / Mock mode), checked every 15 seconds
 
@@ -65,6 +69,7 @@ To use the real backend:
 
 1. Start the Spring Boot backend on **http://localhost:8080** (see the main [README](../README.md)).
 2. Run `npm run dev`. The Vite dev server forwards every request starting with `/api` to `http://localhost:8080` (see `vite.config.js`), so there are no CORS problems.
+   Requests starting with `/connect` go to **Kafka Connect** on `http://localhost:8083`, with `/connect` removed (e.g. `/connect/connectors/shadowbase-mysql-connector/status` → `http://localhost:8083/connectors/shadowbase-mysql-connector/status`). This is used by the CDC pipeline panel.
 3. Open **Settings**, untick **Use mock data**, and choose or create a user.
 
 ### Dashboard: Mock vs Live
@@ -79,6 +84,12 @@ The dashboard has its own setting: **Settings → Dashboard data source**.
 
 - **Real backend** (mock mode off): **Check Risk** and **Apply Migration** send the script to `POST /api/analysis/migration-risk` and show **"Checked by server"**.
 - **Mock mode, or the server can't be reached**: a simpler regex check runs in the browser and the panel shows **"Checked locally"** (hover it to see why).
+- **Heavily queried columns**: the threshold from Settings is sent to the server as `heavilyQueriedThreshold`. The local check also finds `ALTER TABLE t DROP COLUMN c` and looks up the usage with `GET /api/analysis/column-usage?table=t`; if that can't be loaded, the extra check is skipped.
+
+### CDC pipeline: Mock vs real
+
+- **Mock mode**: the Debezium connector is always shown as `RUNNING`.
+- **Real**: the panel calls Kafka Connect through the `/connect` proxy. If Kafka Connect isn't running it shows *"Kafka Connect not reachable on :8083"*; if the connector isn't registered it shows the `curl` command to register it.
 
 ### Backend endpoints the UI uses
 
@@ -90,7 +101,9 @@ The dashboard has its own setting: **Settings → Dashboard data source**.
 | Schema & seeding | `POST …/schema/import`, `GET …/schema/status`, `POST /api/sandboxes/{id}/data-seeds`, `GET /api/sandboxes/{id}/data-seeds/{jobId}` |
 | Users | `GET /api/users`, `POST /api/users`, `GET /api/users/demo` (also used as the health check) |
 | Metrics | `GET /api/metrics`, `POST /api/metrics/reset`, `GET /api/metrics/errors?limit=50` |
-| Risk check | `POST /api/analysis/migration-risk` |
+| Risk check | `POST /api/analysis/migration-risk` (body `{ sql, heavilyQueriedThreshold? }`) |
+| Column usage | `GET /api/analysis/column-usage?table=…`, `POST /api/analysis/column-usage`, `POST /api/analysis/column-usage/reset` |
+| Kafka Connect (port 8083, via `/connect`) | `GET /connectors/shadowbase-mysql-connector/status` |
 | Data sources | `GET /api/datasources`, `POST /api/datasources`, `DELETE /api/datasources/{id}`, `POST /api/datasources/{id}/test`, `POST /api/datasources/test`, `POST /api/sandboxes/{sandboxId}/containers/{containerId}/datasource/{dataSourceId}` |
 
 ## Folder structure
@@ -105,7 +118,9 @@ src/
 │   ├── SqlEditor.jsx         # Monaco SQL editor + Ctrl/Cmd+Enter shortcut
 │   ├── ResultsTable.jsx      # Query results, empty message or error
 │   ├── SandboxCard.jsx       # One sandbox: actions, containers, schema import, seeding
-│   └── ErrorConsole.jsx      # Live SQL error console with filters
+│   ├── ErrorConsole.jsx      # Live SQL error console with filters
+│   ├── ColumnUsagePanel.jsx  # Column usage bar chart (Dashboard)
+│   └── PipelineStatus.jsx    # CDC pipeline status (Dashboard)
 ├── pages/
 │   ├── EditorPage.jsx        # SQL editor, migrations, history, saved scripts, layouts
 │   ├── SandboxesPage.jsx     # List and create sandboxes
@@ -133,6 +148,7 @@ src/
 | `shadowbase.focusMode` | Focus mode on / off |
 | `shadowbase.showConsole` | Dashboard error console shown / hidden |
 | `shadowbase.metricsSource` | Dashboard data source: `mock` (default) or `polling` (live) |
+| `shadowbase.heavyThreshold` | Heavily queried threshold in queries (default `50`) |
 
 To reset everything, clear the site data in your browser (DevTools → Application → Local Storage).
 

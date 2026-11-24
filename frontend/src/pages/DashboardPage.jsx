@@ -1,5 +1,6 @@
 // DashboardPage.jsx — live shadow-traffic dashboard.
-// Shows the active sandbox, four metric cards, and a line chart of the error rate.
+// Shows (top to bottom): the CDC pipeline status, the active sandbox, four metric cards,
+// a line chart of the error rate, column usage of live traffic, and the error console.
 // The numbers come from subscribeToMetrics() in services/metrics.js: mock data, or live data
 // from the backend if "Dashboard data source" is set to Live on the Settings page.
 // A badge next to the title shows which one you are looking at.
@@ -19,6 +20,8 @@ import {
 } from 'recharts'
 import { subscribeToMetrics, getMetricsSource } from '../services/metrics.js'
 import ErrorConsole from '../components/ErrorConsole.jsx'
+import ColumnUsagePanel from '../components/ColumnUsagePanel.jsx'
+import PipelineStatus from '../components/PipelineStatus.jsx'
 import { CURRENT_SANDBOX_KEY, resetMetrics, getErrorMessage } from '../services/api.js'
 
 const MAX_POINTS = 30 // how many updates the chart keeps
@@ -83,13 +86,21 @@ function DashboardPage() {
   const [consoleKey, setConsoleKey] = useState(0)
   const [isResetting, setIsResetting] = useState(false)
   const [resetError, setResetError] = useState(null)
+  // When the "replayed" number last went up (for the Replayer stage of the pipeline).
+  const [lastReplayIncreaseTs, setLastReplayIncreaseTs] = useState(null)
 
   // Subscribe to metrics while not paused. React runs the cleanup (unsubscribe) when
   // the page closes, when Pause is clicked, or when Reset restarts it.
   useEffect(() => {
     if (isPaused) return
 
+    let previousReplayed = null // the replayed count of the previous update
     const unsubscribe = subscribeToMetrics((update) => {
+      // Remember when the replayed count went up (the Replayer is working).
+      if (previousReplayed !== null && update.replayed > previousReplayed) {
+        setLastReplayIncreaseTs(Date.now())
+      }
+      previousReplayed = update.replayed
       setLatest(update)
       // Add the new point and keep only the last 30.
       setHistory((points) =>
@@ -104,6 +115,7 @@ function DashboardPage() {
   function resetLocally() {
     setLatest(null)
     setHistory([])
+    setLastReplayIncreaseTs(null)
     setResetKey((key) => key + 1)
   }
 
@@ -186,6 +198,13 @@ function DashboardPage() {
       {/* Shown only if the live Reset request failed */}
       {resetError && <div className="card-error">{resetError}</div>}
 
+      {/* ---- CDC pipeline: MySQL → Debezium → Kafka → Replayer → Shadow DB ---- */}
+      <PipelineStatus
+        latest={latest}
+        lastReplayIncreaseTs={lastReplayIncreaseTs}
+        sandboxId={sandboxId}
+      />
+
       {/* ---- The four metric cards ("—" until the first update arrives) ---- */}
       <div className="metric-grid">
         <div className="metric-card">
@@ -259,6 +278,9 @@ function DashboardPage() {
           </ResponsiveContainer>
         )}
       </div>
+
+      {/* ---- Column usage of live traffic (not affected by "Show console") ---- */}
+      <ColumnUsagePanel />
 
       {/* ---- Live SQL errors from replayed traffic (has its own Pause/Clear) ---- */}
       {/* Hiding it removes it from the page, which also stops its subscription. */}
