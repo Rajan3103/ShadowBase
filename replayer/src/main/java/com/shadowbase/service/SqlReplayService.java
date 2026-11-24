@@ -88,6 +88,10 @@ public class SqlReplayService {
 
     private String buildSql(ShadowBaseMessage message) {
 
+        if (message.getOperation() == null) {
+            throw new IllegalArgumentException("Operation cannot be null");
+        }
+
         String operation = message.getOperation().toUpperCase();
 
         return switch (operation) {
