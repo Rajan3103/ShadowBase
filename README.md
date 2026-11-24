@@ -447,3 +447,41 @@ This project was built as part of an internship program at **Infotact Solutions*
 ---
 
 <p align="center"><b>ShadowBase</b> — break your schema in the shadows, not in production.</p>
+
+## MySQL Change Data Capture (CDC) - Docker + Debezium
+
+ShadowBase includes a Docker-based MySQL CDC infrastructure using Debezium and Kafka.
+
+### Services
+
+| Service | Container | Port |
+|---|---|---|
+| Kafka | shadowbase-kafka | 9092, 9094 |
+| Debezium Connect | shadowbase-debezium | 8083 |
+| MySQL CDC | shadowbase-mysql-cdc | 3309 |
+
+### Architecture
+
+MySQL 8.4 → Debezium MySQL Connector → Kafka → Java Replayer
+
+### Start CDC Infrastructure
+
+```powershell
+docker compose --env-file .\.env -f .\docker\debezium\docker-compose.yml up -d
+```
+
+### Verify Debezium
+
+```powershell
+Invoke-RestMethod http://localhost:8083/connectors
+Invoke-RestMethod http://localhost:8083/connectors/shadowbase-mysql-connector/status
+```
+
+### Kafka Listeners
+
+- Internal Docker applications: `kafka:9092`
+- Host applications: `localhost:9094`
+
+### Security
+
+Configure `MYSQL_ROOT_PASSWORD` in the local `.env` file. Never commit `.env` to the repository.
