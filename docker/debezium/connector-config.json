@@ -1,0 +1,17 @@
+
+{
+  "name": "shadowbase-mysql-connector",
+  "config": {
+    "connector.class": "io.debezium.connector.mysql.MySqlConnector",
+    "topic.prefix": "shadowbase_mysql",
+    "database.user": "debezium",
+    "database.password": "${DEBEZIUM_DB_PASSWORD}",
+    "database.hostname": "mysql-cdc",
+    "database.port": "3306",
+    "database.server.id": "184054",
+    "database.include.list": "shadowbase_cdc",
+    "table.include.list": "shadowbase_cdc.customers",
+    "schema.history.internal.kafka.bootstrap.servers": "kafka:9092",
+    "schema.history.internal.kafka.topic": "shadowbase_mysql_schema_history"
+  }
+}
