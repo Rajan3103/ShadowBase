@@ -450,38 +450,91 @@ This project was built as part of an internship program at **Infotact Solutions*
 
 ## MySQL Change Data Capture (CDC) - Docker + Debezium
 
-ShadowBase includes a Docker-based MySQL CDC infrastructure using Debezium and Kafka.
+ShadowBase includes a Docker-based MySQL Change Data Capture (CDC) environment using MySQL 8.4, Debezium Connect, and Apache Kafka.
 
 ### Services
 
-| Service | Container | Port |
+| Service | Container | Host Port |
 |---|---|---|
-| Kafka | shadowbase-kafka | 9092, 9094 |
-| Debezium Connect | shadowbase-debezium | 8083 |
-| MySQL CDC | shadowbase-mysql-cdc | 3309 |
+| Kafka | `shadowbase-kafka` | 9092, 9094 |
+| Debezium Connect | `shadowbase-debezium` | 8083 |
+| MySQL CDC | `shadowbase-mysql-cdc` | 3309 |
 
 ### Architecture
 
-MySQL 8.4 → Debezium MySQL Connector → Kafka → Java Replayer
+```text
+MySQL 8.4
+    |
+    | Binary Log (ROW format)
+    v
+Debezium MySQL Connector
+    |
+    v
+Apache Kafka
+    |
+    v
+ShadowBase Java Replayer
+```
+
+### Configuration Files
+
+- `docker/debezium/docker-compose.yml` - Docker services, networking, persistent storage, health checks, and startup dependencies.
+- `docker/debezium/connector-config.json` - MySQL Debezium connector configuration.
+- `.env.example` - Example environment configuration.
+
+### Prerequisites
+
+- Docker Desktop installed and running.
+- A local `.env` file in the repository root.
+- `MYSQL_ROOT_PASSWORD` configured in `.env`.
+
+Never commit the local `.env` file or expose database passwords.
 
 ### Start CDC Infrastructure
+
+Run from the repository root:
 
 ```powershell
 docker compose --env-file .\.env -f .\docker\debezium\docker-compose.yml up -d
 ```
 
-### Verify Debezium
+### Verify Container Health
+
+```powershell
+docker compose --env-file .\.env -f .\docker\debezium\docker-compose.yml ps
+```
+
+Kafka, Debezium Connect, and MySQL CDC have Docker health checks. Debezium Connect waits for Kafka to become healthy before starting.
+
+### Access Debezium REST API
+
+Check the Debezium Connect service:
+
+```powershell
+Invoke-RestMethod http://localhost:8083/
+```
+
+List registered connectors:
 
 ```powershell
 Invoke-RestMethod http://localhost:8083/connectors
+```
+
+Check the MySQL connector status:
+
+```powershell
 Invoke-RestMethod http://localhost:8083/connectors/shadowbase-mysql-connector/status
 ```
 
 ### Kafka Listeners
 
 - Internal Docker applications: `kafka:9092`
-- Host applications: `localhost:9094`
+- Applications running on the host: `localhost:9094`
 
-### Security
+### Stop CDC Infrastructure
 
-Configure `MYSQL_ROOT_PASSWORD` in the local `.env` file. Never commit `.env` to the repository.
+```powershell
+docker compose --env-file .\.env -f .\docker\debezium\docker-compose.yml down
+```
+
+The command preserves the named MySQL data volume. Avoid `down -v` unless you intentionally want to delete the stored CDC data.
