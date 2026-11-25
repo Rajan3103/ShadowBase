@@ -118,7 +118,7 @@ A database admin wants to **merge two tables** (`customers` and `customer_profil
 | Metadata database | MySQL (sandboxes, containers, users, jobs) |
 | Shadow databases | PostgreSQL 16 and MySQL 8.4 via Testcontainers |
 | Message streaming | Apache Kafka (`kafka-clients` 4.3) |
-| Change Data Capture | Debezium *(planned)* |
+| Change Data Capture | Debezium MySQL Connector (Docker-based CDC setup) |
 | SQL analysis | JSqlParser *(planned, bonus)* |
 | Testing | JUnit 5 + Testcontainers |
 | Frontend | React 19 + Vite 8 + React Router 7 |
@@ -370,7 +370,7 @@ npm run build
 
 - **Security is not configured yet.** Spring Security is on the classpath with no configuration, so Spring Boot protects every endpoint with its default login (user `user`, password printed in the backend log at startup). The frontend does not send credentials, so with mock mode off its requests are rejected until a security configuration allows `/api/**`.
 - **Metadata tables are not created automatically.** `spring.jpa.hibernate.ddl-auto=none` and there is no schema script in the repo, so the MySQL tables must be created before the backend can store data.
-- **No CDC yet.** Debezium is not set up; events are produced by `ProducerMain` instead of a real production database.
+- **End-to-end CDC replay integration is pending.** The Docker-based MySQL + Debezium + Kafka CDC pipeline is available and tested. Connecting this source pipeline to the complete production-to-shadow replay workflow remains pending.
 - **Live metrics and the error console use mock data** until the backend exposes metrics and errors.
 - **Multi-statement migrations:** a script is run with one JDBC `execute()` call. MySQL needs `allowMultiQueries=true` for several statements, and the statements are not wrapped in a transaction.
 
@@ -392,7 +392,8 @@ npm run build
 - [x] SQL query / apply-migration API
 - [x] Kafka producer / consumer
 - [x] Stream Replayer (INSERT / UPDATE / DELETE replay + metrics)
-- [ ] Debezium → Kafka CDC pipeline
+- [x] Docker-based MySQL → Debezium → Kafka CDC pipeline
+- [ ] Production-to-shadow CDC replay integration
 - [ ] Mock production DB + traffic generator
 - [ ] Metrics + errors API / WebSocket
 - [ ] Security configuration
@@ -450,38 +451,92 @@ This project was built as part of an internship program at **Infotact Solutions*
 
 ## MySQL Change Data Capture (CDC) - Docker + Debezium
 
-ShadowBase includes a Docker-based MySQL CDC infrastructure using Debezium and Kafka.
+ShadowBase includes a Docker-based MySQL Change Data Capture (CDC) environment using MySQL 8.4, Debezium Connect, and Apache Kafka.
 
 ### Services
 
-| Service | Container | Port |
+| Service | Container | Host Port |
 |---|---|---|
-| Kafka | shadowbase-kafka | 9092, 9094 |
-| Debezium Connect | shadowbase-debezium | 8083 |
-| MySQL CDC | shadowbase-mysql-cdc | 3309 |
+| Kafka | `shadowbase-kafka` | 9092, 9094 |
+| Debezium Connect | `shadowbase-debezium` | 8083 |
+| MySQL CDC | `shadowbase-mysql-cdc` | 3309 |
 
 ### Architecture
 
-MySQL 8.4 → Debezium MySQL Connector → Kafka → Java Replayer
+```text
+MySQL 8.4
+    |
+    | Binary Log (ROW format)
+    v
+Debezium MySQL Connector
+    |
+    v
+Apache Kafka
+    |
+    v
+ShadowBase Java Replayer
+```
+
+### Configuration Files
+- `docker/debezium/validate-config.ps1` - Validates the Debezium connector configuration.
+- `docker/debezium/health-check.ps1` - Checks CDC containers, REST API, connector, and task health.
+- `docker/debezium/docker-compose.yml` - Docker services, networking, persistent storage, health checks, and startup dependencies.
+- `docker/debezium/connector-config.json` - MySQL Debezium connector configuration.
+- `.env.example` - Example environment configuration.
+
+### Prerequisites
+
+- Docker Desktop installed and running.
+- A local `.env` file in the repository root.
+- `MYSQL_ROOT_PASSWORD` configured in `.env`.
+
+Never commit the local `.env` file or expose database passwords.
 
 ### Start CDC Infrastructure
+
+Run from the repository root:
 
 ```powershell
 docker compose --env-file .\.env -f .\docker\debezium\docker-compose.yml up -d
 ```
 
-### Verify Debezium
+### Verify Container Health
+
+```powershell
+docker compose --env-file .\.env -f .\docker\debezium\docker-compose.yml ps
+```
+
+Kafka, Debezium Connect, and MySQL CDC have Docker health checks. Debezium Connect waits for Kafka to become healthy before starting.
+
+### Access Debezium REST API
+
+Check the Debezium Connect service:
+
+```powershell
+Invoke-RestMethod http://localhost:8083/
+```
+
+List registered connectors:
 
 ```powershell
 Invoke-RestMethod http://localhost:8083/connectors
+```
+
+Check the MySQL connector status:
+
+```powershell
 Invoke-RestMethod http://localhost:8083/connectors/shadowbase-mysql-connector/status
 ```
 
 ### Kafka Listeners
 
 - Internal Docker applications: `kafka:9092`
-- Host applications: `localhost:9094`
+- Applications running on the host: `localhost:9094`
 
-### Security
+### Stop CDC Infrastructure
 
-Configure `MYSQL_ROOT_PASSWORD` in the local `.env` file. Never commit `.env` to the repository.
+```powershell
+docker compose --env-file .\.env -f .\docker\debezium\docker-compose.yml down
+```
+
+The command preserves the named MySQL data volume. Avoid `down -v` unless you intentionally want to delete the stored CDC data.
