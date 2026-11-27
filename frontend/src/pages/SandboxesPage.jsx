@@ -13,6 +13,8 @@ import {
   CURRENT_SANDBOX_KEY,
   DEMO_USER_ID,
 } from '../services/api.js'
+import { useToast } from '../components/ToastProvider.jsx'
+import { useDocumentTitle } from '../hooks/useDocumentTitle.js'
 
 // Reads a value from localStorage, or '' if missing or blocked.
 function readStorage(key) {
@@ -41,6 +43,8 @@ function getUserId() {
 }
 
 function SandboxesPage() {
+  useDocumentTitle('Sandboxes') // browser tab: "Sandboxes · ShadowBase"
+  const toast = useToast() // pop-up notifications
   const [userId] = useState(getUserId)
   const [sandboxes, setSandboxes] = useState([])
   const [isLoading, setIsLoading] = useState(false)
@@ -89,6 +93,7 @@ function SandboxesPage() {
     try {
       const created = await createSandbox(newName.trim(), userId)
       setSandboxes((list) => [...list, created])
+      toast.success(`Sandbox "${created.name}" created`)
       setNewName('')
     } catch (err) {
       setCreateError(getErrorMessage(err))

@@ -14,6 +14,7 @@ import {
   getErrorMessage,
 } from '../services/api.js'
 import { METRICS_SOURCE_KEY, getMetricsSource } from '../services/metrics.js'
+import { useDocumentTitle } from '../hooks/useDocumentTitle.js'
 import { HEAVY_THRESHOLD_KEY, getHeavyThreshold } from '../services/migrationRisk.js'
 
 // Reads the saved user ID ('' if none). localStorage can throw, so we use try/catch.
@@ -35,6 +36,7 @@ function save(key, value) {
 }
 
 function SettingsPage() {
+  useDocumentTitle('Settings') // browser tab: "Settings · ShadowBase"
   // Start with the values that were saved before.
   const [useMock, setUseMock] = useState(isMockMode)
   const [userId, setUserId] = useState(loadUserId)
