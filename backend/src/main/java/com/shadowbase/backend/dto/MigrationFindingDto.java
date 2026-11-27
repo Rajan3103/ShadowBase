@@ -20,4 +20,19 @@ public class MigrationFindingDto {
     private int line;
     private String statement;
     private String table;
+
+    /**
+     * The specific column involved in the finding (e.g. dropped or modified column).
+     */
+    private String column;
+
+    /**
+     * Recommended safe pattern or alternative (e.g. expand-contract pattern).
+     */
+    private String suggestedFix;
+
+    /**
+     * Recent query access count if telemetry is available.
+     */
+    private Long queryCount;
 }

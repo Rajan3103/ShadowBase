@@ -56,6 +56,16 @@ class SqlAstAnalysisServiceTest {
     }
 
     @Test
+    void shouldExtractDroppedColumnFromSchemaQualifiedTable() {
+        String sql = "ALTER TABLE public.customers DROP COLUMN zip_code;";
+        List<DroppedColumnTarget> dropped = astService.extractDroppedColumns(sql);
+
+        assertEquals(1, dropped.size());
+        assertEquals("customers", dropped.get(0).getTable());
+        assertEquals("zip_code", dropped.get(0).getColumn());
+    }
+
+    @Test
     void shouldWarnWhenDroppingHeavilyQueriedColumn() {
         // Record 25 queries for users.email (exceeds threshold 10)
         tracker.recordColumnAccess("users", "email", 25L);
@@ -70,6 +80,9 @@ class SqlAstAnalysisServiceTest {
         assertTrue(finding.getMessage().contains("heavily queried"));
         assertTrue(finding.getMessage().contains("25 recent queries"));
         assertEquals("users", finding.getTable());
+        assertEquals("email", finding.getColumn());
+        assertEquals(25L, finding.getQueryCount());
+        assertTrue(finding.getSuggestedFix().contains("Expand-Contract"));
     }
 
     @Test

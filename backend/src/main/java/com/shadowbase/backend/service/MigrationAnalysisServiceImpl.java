@@ -213,18 +213,21 @@ public class MigrationAnalysisServiceImpl implements MigrationAnalysisService {
                 long count = columnUsageTracker.getQueryCount(table, col);
                 return buildFinding("high", "DROPPED_HEAVILY_QUERIED_COLUMN",
                         String.format("CRITICAL: Dropping heavily queried column '%s' on table '%s' (%d recent queries). This will immediately break active application traffic.", col, table, count),
-                        line, fullStatement, table);
+                        line, fullStatement, table, col,
+                        "Apply Expand-Contract pattern: stop querying this column in active code, deploy, and verify before executing DROP.", count);
             }
             if (columnUsageTracker != null && columnUsageTracker.getQueryCount(table, col) > 0) {
                 long count = columnUsageTracker.getQueryCount(table, col);
                 return buildFinding("high", "DROPPED_QUERIED_COLUMN",
                         String.format("Warning: Dropping active column '%s' on table '%s' (%d recent queries).", col, table, count),
-                        line, fullStatement, table);
+                        line, fullStatement, table, col,
+                        "Verify no application services reference this column before executing DROP.", count);
             }
 
             return buildFinding("high", "DROP_COLUMN",
                     String.format("Dropping column '%s' from '%s' will break any live query or insert that still uses it.", col, table),
-                    line, fullStatement, table);
+                    line, fullStatement, table, col,
+                    "Verify all application queries have been updated before dropping this column.", null);
         }
 
         // HIGH: RENAME COLUMN
@@ -232,9 +235,19 @@ public class MigrationAnalysisServiceImpl implements MigrationAnalysisService {
         if ((m = renameCol.matcher(clause)).find()) {
             String oldCol = cleanName(m.group(1));
             String newCol = cleanName(m.group(2));
+
+            if (columnUsageTracker != null && columnUsageTracker.isColumnHeavilyQueried(table, oldCol, threshold)) {
+                long count = columnUsageTracker.getQueryCount(table, oldCol);
+                return buildFinding("high", "RENAMED_HEAVILY_QUERIED_COLUMN",
+                        String.format("CRITICAL: Renaming heavily queried column '%s' to '%s' on table '%s' (%d recent queries). Active queries will fail immediately.", oldCol, newCol, table, count),
+                        line, fullStatement, table, oldCol,
+                        "Apply Expand-Contract pattern: add new column '" + newCol + "', dual-write, migrate readers, then drop old column.", count);
+            }
+
             return buildFinding("high", "RENAME_COLUMN",
                     String.format("Renaming column '%s' to '%s' in '%s' will break every live query that still uses the old name.", oldCol, newCol, table),
-                    line, fullStatement, table);
+                    line, fullStatement, table, oldCol,
+                    "Ensure all application queries are updated to use '" + newCol + "' before renaming.", null);
         }
 
         // HIGH: RENAME TABLE (ALTER TABLE t RENAME [TO] t2)
@@ -314,6 +327,10 @@ public class MigrationAnalysisServiceImpl implements MigrationAnalysisService {
     }
 
     private MigrationFindingDto buildFinding(String level, String rule, String message, int line, String statement, String table) {
+        return buildFinding(level, rule, message, line, statement, table, null, null, null);
+    }
+
+    private MigrationFindingDto buildFinding(String level, String rule, String message, int line, String statement, String table, String column, String suggestedFix, Long queryCount) {
         return MigrationFindingDto.builder()
                 .level(level)
                 .rule(rule)
@@ -321,6 +338,9 @@ public class MigrationAnalysisServiceImpl implements MigrationAnalysisService {
                 .line(line)
                 .statement(statement.length() > 100 ? statement.substring(0, 100) + "..." : statement)
                 .table(table)
+                .column(column)
+                .suggestedFix(suggestedFix)
+                .queryCount(queryCount)
                 .build();
     }
 

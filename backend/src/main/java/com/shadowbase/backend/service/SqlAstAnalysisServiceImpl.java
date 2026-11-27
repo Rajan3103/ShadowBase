@@ -106,6 +106,9 @@ public class SqlAstAnalysisServiceImpl implements SqlAstAnalysisService {
                         .line(target.getLine())
                         .statement(truncateStatement(target.getStatement()))
                         .table(table)
+                        .column(column)
+                        .suggestedFix("Apply the Expand-Contract pattern: stop querying this column in active code, deploy changes, and verify before executing DROP COLUMN.")
+                        .queryCount(queryCount)
                         .build());
             } else if (queryCount > 0) {
                 // Moderate warning: column has active queries, but under heavy threshold
@@ -118,6 +121,9 @@ public class SqlAstAnalysisServiceImpl implements SqlAstAnalysisService {
                         .line(target.getLine())
                         .statement(truncateStatement(target.getStatement()))
                         .table(table)
+                        .column(column)
+                        .suggestedFix("Verify no application queries or background services reference this column before executing DROP COLUMN.")
+                        .queryCount(queryCount)
                         .build());
             }
         }
@@ -174,7 +180,11 @@ public class SqlAstAnalysisServiceImpl implements SqlAstAnalysisService {
         if (identifier == null) {
             return "";
         }
-        return identifier.replaceAll("[`\"\\[\\];,()]", "").trim();
+        String cleaned = identifier.replaceAll("[`\"\\[\\];,()]", "").trim();
+        if (cleaned.contains(".")) {
+            cleaned = cleaned.substring(cleaned.lastIndexOf('.') + 1).trim();
+        }
+        return cleaned;
     }
 
     private String truncateStatement(String statement) {

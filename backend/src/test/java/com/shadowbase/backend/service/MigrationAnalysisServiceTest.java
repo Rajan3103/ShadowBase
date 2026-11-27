@@ -130,4 +130,24 @@ class MigrationAnalysisServiceTest {
         assertEquals("DROPPED_QUERIED_COLUMN", res.getFindings().get(0).getRule());
         assertTrue(res.getFindings().get(0).getMessage().contains("4 recent queries"));
     }
+
+    @Test
+    void testRenamedHeavilyQueriedColumnWarnsWithCriticalFinding() {
+        ColumnUsageTracker tracker = new ColumnUsageTrackerImpl(10);
+        SqlAstAnalysisService astService = new SqlAstAnalysisServiceImpl(tracker, 10);
+        MigrationAnalysisServiceImpl serviceWithAst = new MigrationAnalysisServiceImpl(astService, tracker);
+
+        // Record 40 queries on customers.phone
+        tracker.recordColumnAccess("customers", "phone", 40L);
+
+        String sql = "ALTER TABLE customers RENAME COLUMN phone TO mobile_phone;";
+        MigrationAnalysisResponse res = serviceWithAst.analyzeMigration(new MigrationAnalysisRequest(sql));
+
+        assertEquals(1, res.getHighRisks());
+        assertTrue(res.isHasBreakingRisks());
+        assertEquals("RENAMED_HEAVILY_QUERIED_COLUMN", res.getFindings().get(0).getRule());
+        assertTrue(res.getFindings().get(0).getMessage().contains("40 recent queries"));
+        assertEquals("phone", res.getFindings().get(0).getColumn());
+        assertTrue(res.getFindings().get(0).getSuggestedFix().contains("Expand-Contract"));
+    }
 }

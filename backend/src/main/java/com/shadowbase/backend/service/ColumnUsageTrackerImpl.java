@@ -2,21 +2,27 @@ package com.shadowbase.backend.service;
 
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import net.sf.jsqlparser.expression.Expression;
+import net.sf.jsqlparser.expression.ExpressionVisitorAdapter;
 import net.sf.jsqlparser.parser.CCJSqlParserUtil;
 import net.sf.jsqlparser.schema.Column;
 import net.sf.jsqlparser.schema.Table;
 import net.sf.jsqlparser.statement.Statement;
+import net.sf.jsqlparser.statement.delete.Delete;
 import net.sf.jsqlparser.statement.insert.Insert;
 import net.sf.jsqlparser.statement.select.FromItem;
+import net.sf.jsqlparser.statement.select.Join;
 import net.sf.jsqlparser.statement.select.PlainSelect;
 import net.sf.jsqlparser.statement.select.Select;
 import net.sf.jsqlparser.statement.select.SelectItem;
@@ -74,9 +80,35 @@ public class ColumnUsageTrackerImpl implements ColumnUsageTracker {
                 processUpdate(update);
             } else if (stmt instanceof Insert insert) {
                 processInsert(insert);
+            } else if (stmt instanceof Delete delete) {
+                processDelete(delete);
             }
         } catch (Exception e) {
             log.debug("Skipping column usage AST parsing for statement: {}", e.getMessage());
+        }
+    }
+
+    private class ColumnFinder extends ExpressionVisitorAdapter {
+        private final String defaultTable;
+        private final Map<String, String> aliasToTable;
+        private final Set<String> accessedColumns;
+
+        ColumnFinder(String defaultTable, Map<String, String> aliasToTable, Set<String> accessedColumns) {
+            this.defaultTable = defaultTable;
+            this.aliasToTable = aliasToTable;
+            this.accessedColumns = accessedColumns;
+        }
+
+        @Override
+        public void visit(Column column) {
+            String rawTbl = (column.getTable() != null && column.getTable().getName() != null)
+                    ? cleanName(column.getTable().getName())
+                    : defaultTable;
+            String resolvedTable = aliasToTable.getOrDefault(rawTbl.toLowerCase(Locale.ROOT), rawTbl);
+            String colName = cleanName(column.getColumnName());
+            if (!resolvedTable.isBlank() && !colName.isBlank() && !"*".equals(colName)) {
+                accessedColumns.add(resolvedTable + "." + colName);
+            }
         }
     }
 
@@ -85,29 +117,88 @@ public class ColumnUsageTrackerImpl implements ColumnUsageTracker {
             return;
         }
         PlainSelect plain = select.getPlainSelect();
-        String defaultTable = extractTableFromItem(plain.getFromItem());
+        Map<String, String> aliasToTable = new HashMap<>();
 
-        if (plain.getSelectItems() != null) {
-            for (SelectItem<?> item : plain.getSelectItems()) {
-                if (item.getExpression() instanceof Column col) {
-                    String tbl = col.getTable() != null ? cleanName(col.getTable().getName()) : defaultTable;
-                    recordColumnAccess(tbl, cleanName(col.getColumnName()));
-                }
+        String defaultTable = "unknown";
+        if (plain.getFromItem() instanceof Table t) {
+            defaultTable = cleanName(t.getName());
+            aliasToTable.put(defaultTable.toLowerCase(Locale.ROOT), defaultTable);
+            if (t.getAlias() != null && t.getAlias().getName() != null) {
+                aliasToTable.put(cleanName(t.getAlias().getName()).toLowerCase(Locale.ROOT), defaultTable);
             }
+        } else if (plain.getFromItem() != null) {
+            defaultTable = cleanName(plain.getFromItem().toString());
         }
-    }
 
-    private void processUpdate(Update update) {
-        String table = update.getTable() != null ? cleanName(update.getTable().getName()) : "unknown";
-        if (update.getUpdateSets() != null) {
-            for (UpdateSet set : update.getUpdateSets()) {
-                if (set.getColumns() != null) {
-                    for (Column col : set.getColumns()) {
-                        recordColumnAccess(table, cleanName(col.getColumnName()));
+        if (plain.getJoins() != null) {
+            for (Join join : plain.getJoins()) {
+                if (join.getRightItem() instanceof Table jt) {
+                    String joinTable = cleanName(jt.getName());
+                    aliasToTable.put(joinTable.toLowerCase(Locale.ROOT), joinTable);
+                    if (jt.getAlias() != null && jt.getAlias().getName() != null) {
+                        aliasToTable.put(cleanName(jt.getAlias().getName()).toLowerCase(Locale.ROOT), joinTable);
                     }
                 }
             }
         }
+
+        Set<String> accessedColumns = new HashSet<>();
+        ColumnFinder finder = new ColumnFinder(defaultTable, aliasToTable, accessedColumns);
+
+        if (plain.getSelectItems() != null) {
+            for (SelectItem<?> item : plain.getSelectItems()) {
+                if (item.getExpression() != null) {
+                    item.getExpression().accept(finder);
+                }
+            }
+        }
+
+        if (plain.getWhere() != null) {
+            plain.getWhere().accept(finder);
+        }
+
+        if (plain.getJoins() != null) {
+            for (Join join : plain.getJoins()) {
+                if (join.getOnExpressions() != null) {
+                    for (Expression onExpr : join.getOnExpressions()) {
+                        onExpr.accept(finder);
+                    }
+                }
+            }
+        }
+
+        if (plain.getHaving() != null) {
+            plain.getHaving().accept(finder);
+        }
+
+        recordUniqueColumns(accessedColumns);
+    }
+
+    private void processUpdate(Update update) {
+        String table = update.getTable() != null ? cleanName(update.getTable().getName()) : "unknown";
+        Map<String, String> aliasToTable = Collections.singletonMap(table.toLowerCase(Locale.ROOT), table);
+        Set<String> accessedColumns = new HashSet<>();
+        ColumnFinder finder = new ColumnFinder(table, aliasToTable, accessedColumns);
+
+        if (update.getUpdateSets() != null) {
+            for (UpdateSet set : update.getUpdateSets()) {
+                if (set.getColumns() != null) {
+                    for (Column col : set.getColumns()) {
+                        finder.visit(col);
+                    }
+                }
+                if (set.getValues() != null) {
+                    for (Expression valExpr : set.getValues()) {
+                        valExpr.accept(finder);
+                    }
+                }
+            }
+        }
+        if (update.getWhere() != null) {
+            update.getWhere().accept(finder);
+        }
+
+        recordUniqueColumns(accessedColumns);
     }
 
     private void processInsert(Insert insert) {
@@ -115,6 +206,25 @@ public class ColumnUsageTrackerImpl implements ColumnUsageTracker {
         if (insert.getColumns() != null) {
             for (Column col : insert.getColumns()) {
                 recordColumnAccess(table, cleanName(col.getColumnName()));
+            }
+        }
+    }
+
+    private void processDelete(Delete delete) {
+        String table = delete.getTable() != null ? cleanName(delete.getTable().getName()) : "unknown";
+        if (delete.getWhere() != null) {
+            Map<String, String> aliasToTable = Collections.singletonMap(table.toLowerCase(Locale.ROOT), table);
+            Set<String> accessedColumns = new HashSet<>();
+            delete.getWhere().accept(new ColumnFinder(table, aliasToTable, accessedColumns));
+            recordUniqueColumns(accessedColumns);
+        }
+    }
+
+    private void recordUniqueColumns(Set<String> accessedColumns) {
+        for (String colKey : accessedColumns) {
+            int dotIdx = colKey.indexOf('.');
+            if (dotIdx > 0 && dotIdx < colKey.length() - 1) {
+                recordColumnAccess(colKey.substring(0, dotIdx), colKey.substring(dotIdx + 1));
             }
         }
     }

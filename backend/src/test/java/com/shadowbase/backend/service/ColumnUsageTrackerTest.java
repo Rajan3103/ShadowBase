@@ -67,6 +67,26 @@ class ColumnUsageTrackerTest {
     }
 
     @Test
+    void shouldExtractColumnsFromDeleteQuery() {
+        String query = "DELETE FROM sessions WHERE expired_at < NOW() AND user_id = 42";
+        tracker.recordQueryColumns(query);
+
+        assertEquals(1L, tracker.getQueryCount("sessions", "expired_at"));
+        assertEquals(1L, tracker.getQueryCount("sessions", "user_id"));
+    }
+
+    @Test
+    void shouldExtractColumnsFromJoinInSelect() {
+        String query = "SELECT o.amount FROM orders o JOIN customers c ON o.customer_id = c.id WHERE c.city = 'NY'";
+        tracker.recordQueryColumns(query);
+
+        assertEquals(1L, tracker.getQueryCount("orders", "amount"));
+        assertEquals(1L, tracker.getQueryCount("orders", "customer_id"));
+        assertEquals(1L, tracker.getQueryCount("customers", "id"));
+        assertEquals(1L, tracker.getQueryCount("customers", "city"));
+    }
+
+    @Test
     void shouldReturnTableColumnUsageMap() {
         tracker.recordColumnAccess("accounts", "balance", 20L);
         tracker.recordColumnAccess("accounts", "owner_id", 5L);
