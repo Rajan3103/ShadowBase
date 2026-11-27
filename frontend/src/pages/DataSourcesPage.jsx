@@ -14,6 +14,8 @@ import {
   getErrorMessage,
   CURRENT_SANDBOX_KEY,
 } from '../services/api.js'
+import { useToast } from '../components/ToastProvider.jsx'
+import { useDocumentTitle } from '../hooks/useDocumentTitle.js'
 
 const CURRENT_CONTAINER_KEY = 'shadowbase.currentContainerId' // set by the SQL Editor
 
@@ -109,6 +111,8 @@ function TestResult({ result }) {
 }
 
 function DataSourcesPage() {
+  useDocumentTitle('Data Sources') // browser tab: "Data Sources · ShadowBase"
+  const toast = useToast() // pop-up notifications
   // ---- The list ----
   const [dataSources, setDataSources] = useState([])
   const [isLoading, setIsLoading] = useState(true)
@@ -179,12 +183,25 @@ function DataSourcesPage() {
 
   // ================= Row actions =================
 
+  // Shows a toast for a test result, e.g. "shop_primary: connected (23 ms)".
+  function notifyTest(name, result) {
+    if (result.success) {
+      const latency = result.latencyMs != null ? ` (${result.latencyMs} ms)` : ''
+      toast.success(`${name}: connected${latency}`)
+    } else {
+      toast.error(`${name}: ${result.message || 'connection failed'}`)
+    }
+  }
+
   // Test one saved data source and remember the result for its row.
-  async function testOne(id) {
+  // "notify" = show a toast (Test all turns it off and shows one summary toast instead).
+  async function testOne(dataSource, notify = true) {
+    const id = dataSource.id
     setRowBusy(id, 'test')
     const result = await runTest(() => testDataSource(id))
     setTestResults((current) => ({ ...current, [id]: result }))
     setRowBusy(id, null)
+    if (notify) notifyTest(dataSource.connectionName, result)
     return result
   }
 
@@ -194,10 +211,14 @@ function DataSourcesPage() {
     setTestAllSummary(null)
     let connected = 0
     for (const dataSource of dataSources) {
-      const result = await testOne(dataSource.id) // wait for each before the next
+      const result = await testOne(dataSource, false) // wait for each before the next
       if (result.success) connected += 1
     }
-    setTestAllSummary(`${connected} of ${dataSources.length} connected`)
+    const summary = `${connected} of ${dataSources.length} connected`
+    setTestAllSummary(summary)
+    // One toast for the whole run: green if all connected, red otherwise.
+    if (connected === dataSources.length) toast.success(`Test all: ${summary}`)
+    else toast.error(`Test all: ${summary}`)
     setIsTestingAll(false)
   }
 
@@ -220,13 +241,14 @@ function DataSourcesPage() {
   }
 
   // "Delete" in the inline confirm: delete, then remove the row.
-  async function handleConfirmDelete(id) {
+  async function handleConfirmDelete(id, name) {
     setPendingDeleteId(null)
     setRowBusy(id, 'delete')
     setRowMessage(id, null)
     try {
       await deleteDataSource(id)
       setDataSources((list) => list.filter((d) => d.id !== id))
+      toast.success(`Data source "${name}" deleted`)
       setTestResults((current) => ({ ...current, [id]: undefined }))
     } catch (err) {
       setRowMessage(id, { ok: false, text: `Delete failed: ${getErrorMessage(err)}` })
@@ -258,6 +280,7 @@ function DataSourcesPage() {
     setIsFormTesting(true)
     setFormTestResult(null)
     const result = await runTest(() => testDataSourceConfig(toRequest(form)))
+    notifyTest(form.connectionName.trim(), result)
     setFormTestResult(result)
     setIsFormTesting(false)
   }
@@ -274,6 +297,7 @@ function DataSourcesPage() {
       setForm(EMPTY_FORM) // also clears the password from memory
       setFormTestResult(null)
       setSaveMessage(`Saved "${created?.connectionName ?? 'data source'}" ✓`)
+      toast.success(`Data source "${created?.connectionName ?? 'data source'}" saved`)
       await loadDataSources()
     } catch (err) {
       setSaveError(getErrorMessage(err))
@@ -396,7 +420,7 @@ function DataSourcesPage() {
                         // Inline confirm (instead of a pop-up).
                         <div className="ds-actions">
                           <span>Delete &quot;{d.connectionName}&quot;?</span>
-                          <button className="small-button danger" onClick={() => handleConfirmDelete(d.id)}>
+                          <button className="small-button danger" onClick={() => handleConfirmDelete(d.id, d.connectionName)}>
                             Delete
                           </button>
                           <button className="small-button" onClick={() => setPendingDeleteId(null)}>
@@ -407,7 +431,7 @@ function DataSourcesPage() {
                         <div className="ds-actions">
                           <button
                             className="small-button"
-                            onClick={() => testOne(d.id)}
+                            onClick={() => testOne(d)}
                             disabled={Boolean(rowBusy) || isTestingAll}
                           >
                             Test

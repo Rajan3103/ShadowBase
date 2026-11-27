@@ -23,6 +23,8 @@ import {
   isMockMode,
 } from '../services/api.js'
 import { listScripts, saveScript, deleteScript, getScript } from '../services/scripts.js'
+import { useToast } from '../components/ToastProvider.jsx'
+import { useDocumentTitle } from '../hooks/useDocumentTitle.js'
 import { analyzeMigrationWithFallback, CRITICAL_RULE } from '../services/migrationRisk.js'
 
 const DEFAULT_SQL = '-- Write your migration script here\nSELECT * FROM customers;'
@@ -195,6 +197,8 @@ function RiskFindings({ findings, threshold, onSelect }) {
 //   focusMode         — true when the sidebar is hidden
 //   onToggleFocusMode — turns focus mode on/off
 function EditorPage({ focusMode, onToggleFocusMode }) {
+  useDocumentTitle('SQL Editor') // browser tab: "SQL Editor · ShadowBase"
+  const toast = useToast() // pop-up notifications
   // ---- Editor and results ----
   const [sql, setSql] = useState(DEFAULT_SQL) // text in the editor
   const [columns, setColumns] = useState([]) // result column names
@@ -435,11 +439,13 @@ function EditorPage({ focusMode, onToggleFocusMode }) {
     setIsConfirming(false)
     setMigrationResult(null)
     const outcome = await executeScript()
-    setMigrationResult(
-      outcome.ok
-        ? { ok: true, text: outcome.result.message || 'Migration applied to the shadow database.' }
-        : { ok: false, text: `Migration failed: ${outcome.message}` },
-    )
+    const result = outcome.ok
+      ? { ok: true, text: outcome.result.message || 'Migration applied to the shadow database.' }
+      : { ok: false, text: `Migration failed: ${outcome.message}` }
+    setMigrationResult(result) // the message under the toolbar (as before)
+    // ...and a toast as well.
+    if (result.ok) toast.success(result.text)
+    else toast.error(result.text)
   }
 
   // ================= Saved scripts =================
@@ -464,6 +470,7 @@ function EditorPage({ focusMode, onToggleFocusMode }) {
 
     // Show "Saved ✓" for 2 seconds (restart the timer if Save is clicked again).
     setShowSavedTick(true)
+    toast.success(`Script "${name}" saved`)
     clearTimeout(savedTimerRef.current)
     savedTimerRef.current = setTimeout(() => setShowSavedTick(false), 2000)
   }
@@ -515,6 +522,7 @@ function EditorPage({ focusMode, onToggleFocusMode }) {
       setSavedScripts(listScripts())
       setSelectedName('')
       setBaselineSql(null) // the editor text is no longer saved anywhere
+      toast.success(`Script "${pending.name}" deleted`)
     }
     setPending(null)
   }
@@ -561,6 +569,7 @@ function EditorPage({ focusMode, onToggleFocusMode }) {
     link.click()
     link.remove()
     setTimeout(() => URL.revokeObjectURL(url), 0) // free the memory
+    toast.success(`Exported ${link.download}`)
   }
 
   // "Open .sql" button: open the browser's file picker via the hidden input.

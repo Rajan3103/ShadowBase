@@ -26,7 +26,9 @@ const STATUS_INFO = {
   offline: { label: 'Offline', dot: 'status-dot red' },
 }
 
-function Sidebar() {
+// Props:
+//   onOpenShortcuts — opens the keyboard shortcuts help (App.jsx)
+function Sidebar({ onOpenShortcuts }) {
   // useLocation makes the Sidebar re-draw on every page change, so a mock-mode change
   // made on the Settings page is picked up as soon as you go to another page.
   useLocation()
@@ -79,6 +81,11 @@ function Sidebar() {
         {/* The label is hidden in focus mode (see index.css). */}
         <span className="backend-status-label">Backend: {status.label}</span>
       </div>
+
+      {/* Opens the keyboard shortcuts help (same as pressing "?") */}
+      <button className="sidebar-shortcuts" onClick={onOpenShortcuts}>
+        Shortcuts (?)
+      </button>
     </aside>
   )
 }

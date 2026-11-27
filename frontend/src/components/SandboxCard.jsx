@@ -13,6 +13,7 @@ import {
   startDataSeed,
   getErrorMessage,
 } from '../services/api.js'
+import { useToast } from './ToastProvider.jsx'
 
 // The container that "Add PostgreSQL container" creates.
 const POSTGRES_REQUEST = {
@@ -55,6 +56,7 @@ function SandboxCard({ sandbox, isActive, refreshKey, onUpdate, onUseInEditor })
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const [copiedId, setCopiedId] = useState(null) // container whose URL was just copied
   const fileInputRef = useRef(null)
+  const toast = useToast() // pop-up notifications
 
   const isDestroyed = sandbox.status === 'DESTROYED'
   const isBusy = busyAction !== null
@@ -91,6 +93,7 @@ function SandboxCard({ sandbox, isActive, refreshKey, onUpdate, onUseInEditor })
   function handleStart() {
     runAction('start', async () => {
       onUpdate(await startSandbox(sandbox.id))
+      toast.success(`Sandbox "${sandbox.name}" started`)
       await loadContainers()
     })
   }
@@ -98,6 +101,7 @@ function SandboxCard({ sandbox, isActive, refreshKey, onUpdate, onUseInEditor })
   function handleStop() {
     runAction('stop', async () => {
       onUpdate(await stopSandbox(sandbox.id))
+      toast.success(`Sandbox "${sandbox.name}" stopped`)
       await loadContainers()
     })
   }
@@ -106,6 +110,7 @@ function SandboxCard({ sandbox, isActive, refreshKey, onUpdate, onUseInEditor })
     setConfirmingDelete(false)
     runAction('delete', async () => {
       await deleteSandbox(sandbox.id)
+      toast.success(`Sandbox "${sandbox.name}" deleted`)
       // The backend keeps deleted sandboxes with status DESTROYED, so we reload it.
       onUpdate(await getSandbox(sandbox.id))
       await loadContainers()

@@ -23,6 +23,8 @@ import ErrorConsole from '../components/ErrorConsole.jsx'
 import ColumnUsagePanel from '../components/ColumnUsagePanel.jsx'
 import PipelineStatus from '../components/PipelineStatus.jsx'
 import { CURRENT_SANDBOX_KEY, resetMetrics, getErrorMessage } from '../services/api.js'
+import { useToast } from '../components/ToastProvider.jsx'
+import { useDocumentTitle } from '../hooks/useDocumentTitle.js'
 
 const MAX_POINTS = 30 // how many updates the chart keeps
 const BREAKING_THRESHOLD = 5 // error rate (%) shown as the dashed line
@@ -73,6 +75,8 @@ function formatTime(ts) {
 }
 
 function DashboardPage() {
+  useDocumentTitle('Dashboard') // browser tab: "Dashboard · ShadowBase"
+  const toast = useToast() // pop-up notifications
   const [sandboxId] = useState(readCurrentSandbox)
   const [latest, setLatest] = useState(null) // the most recent update, or null before the first
   const [history, setHistory] = useState([]) // last 30 points for the chart
@@ -127,6 +131,7 @@ function DashboardPage() {
     const isLive = configuredSource === 'polling' && latest?.source !== 'mock-fallback'
     if (!isLive) {
       resetLocally()
+      toast.success('Metrics reset')
       return
     }
 
@@ -135,6 +140,7 @@ function DashboardPage() {
       await resetMetrics()
       resetLocally()
       setConsoleKey((key) => key + 1) // empty console + a fresh list of seen error ids
+      toast.success('Metrics reset on the backend')
     } catch (err) {
       setResetError(`Reset failed: ${getErrorMessage(err)}`)
     } finally {
