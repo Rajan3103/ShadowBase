@@ -27,6 +27,13 @@ public interface MetricsService {
     void recordExecution(boolean success, String table, String operation, String sqlState, String message);
 
     /**
+     * Records an execution result and updates column usage telemetry for accessed columns.
+     */
+    default void recordExecution(boolean success, String table, String operation, String sqlState, String message, List<String> columns) {
+        recordExecution(success, table, operation, sqlState, message);
+    }
+
+    /**
      * Resets counters and clears the error buffer.
      */
     void resetMetrics();

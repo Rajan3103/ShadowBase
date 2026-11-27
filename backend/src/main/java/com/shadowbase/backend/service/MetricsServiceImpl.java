@@ -26,6 +26,17 @@ public class MetricsServiceImpl implements MetricsService {
     private final AtomicLong totalReplayed = new AtomicLong(0);
     private final AtomicLong totalFailed = new AtomicLong(0);
     private final ConcurrentLinkedDeque<ReplayErrorDto> errorBuffer = new ConcurrentLinkedDeque<>();
+    private final ColumnUsageTracker columnUsageTracker;
+
+    public MetricsServiceImpl() {
+        this(null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public MetricsServiceImpl(
+            @org.springframework.beans.factory.annotation.Autowired(required = false) ColumnUsageTracker columnUsageTracker) {
+        this.columnUsageTracker = columnUsageTracker;
+    }
 
     @Override
     public MetricsSummaryResponse getMetrics() {
@@ -84,6 +95,18 @@ public class MetricsServiceImpl implements MetricsService {
             }
 
             log.debug("Recorded query failure: table={}, op={}, message={}", table, operation, message);
+        }
+    }
+
+    @Override
+    public void recordExecution(boolean success, String table, String operation, String sqlState, String message, List<String> columns) {
+        recordExecution(success, table, operation, sqlState, message);
+        if (columnUsageTracker != null && table != null && !table.isBlank() && columns != null) {
+            for (String col : columns) {
+                if (col != null && !col.isBlank()) {
+                    columnUsageTracker.recordColumnAccess(table, col);
+                }
+            }
         }
     }
 

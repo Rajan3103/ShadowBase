@@ -114,4 +114,34 @@ class ColumnUsageTrackerTest {
         assertEquals(5L, tracker.getQueryCount("users", "email"));
         assertEquals(5L, tracker.getQueryCount("USERS", "EMAIL"));
     }
+
+    @Test
+    void shouldTrackTablesAndBatchUsage() {
+        Map<String, Map<String, Long>> batch = Map.of(
+                "customers", Map.of("email", 50L, "phone", 20L),
+                "orders", Map.of("amount", 80L)
+        );
+        tracker.recordBatchUsage(batch);
+
+        assertEquals(50L, tracker.getQueryCount("customers", "email"));
+        assertEquals(20L, tracker.getQueryCount("customers", "phone"));
+        assertEquals(80L, tracker.getQueryCount("orders", "amount"));
+
+        assertTrue(tracker.getTrackedTables().contains("customers"));
+        assertTrue(tracker.getTrackedTables().contains("orders"));
+
+        Map<String, Map<String, Long>> all = tracker.getAllColumnUsage();
+        assertEquals(2, all.size());
+        assertEquals(50L, all.get("customers").get("email"));
+    }
+
+    @Test
+    void shouldSeedDemoBaseline() {
+        ColumnUsageTrackerImpl seededTracker = new ColumnUsageTrackerImpl(10, true);
+        seededTracker.initDemoBaseline();
+
+        assertEquals(120L, seededTracker.getQueryCount("customers", "email"));
+        assertEquals(500L, seededTracker.getQueryCount("orders", "id"));
+        assertTrue(seededTracker.getTrackedTables().contains("customers"));
+    }
 }

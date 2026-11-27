@@ -72,6 +72,27 @@ public interface ColumnUsageTracker {
     Map<String, Long> getTableColumnUsage(String table);
 
     /**
+     * Returns a set of all table names currently tracked.
+     *
+     * @return set of table names
+     */
+    java.util.Set<String> getTrackedTables();
+
+    /**
+     * Returns the full map of tables to column query counts.
+     *
+     * @return map of table -> (column -> count)
+     */
+    Map<String, Map<String, Long>> getAllColumnUsage();
+
+    /**
+     * Ingests a batch of table column frequencies.
+     *
+     * @param batchUsage map of table -> (column -> count)
+     */
+    void recordBatchUsage(Map<String, Map<String, Long>> batchUsage);
+
+    /**
      * Resets all tracked column access metrics.
      */
     void reset();

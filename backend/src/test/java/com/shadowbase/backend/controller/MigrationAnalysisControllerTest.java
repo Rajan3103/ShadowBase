@@ -4,6 +4,7 @@ import java.util.Collections;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -74,12 +75,27 @@ class MigrationAnalysisControllerTest {
         assertEquals(HttpStatus.OK, recordRes.getStatusCode());
 
         // 2. Query column usage
-        ResponseEntity<java.util.Map<String, Long>> getRes = controllerWithTracker.getColumnUsage("users");
+        ResponseEntity<?> getRes = controllerWithTracker.getColumnUsage("users");
         assertEquals(HttpStatus.OK, getRes.getStatusCode());
         assertNotNull(getRes.getBody());
-        assertEquals(12L, getRes.getBody().get("email"));
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, Long> userStats = (java.util.Map<String, Long>) getRes.getBody();
+        assertEquals(12L, userStats.get("email"));
 
-        // 3. Reset column usage
+        // 3. Query tracked tables
+        ResponseEntity<java.util.Set<String>> tablesRes = controllerWithTracker.getTrackedTables();
+        assertEquals(HttpStatus.OK, tablesRes.getStatusCode());
+        assertTrue(tablesRes.getBody().contains("users"));
+
+        // 4. Batch record
+        java.util.Map<String, java.util.Map<String, Long>> batch = java.util.Map.of(
+                "orders", java.util.Map.of("amount", 99L)
+        );
+        ResponseEntity<Void> batchRes = controllerWithTracker.recordBatchColumnUsage(batch);
+        assertEquals(HttpStatus.OK, batchRes.getStatusCode());
+        assertEquals(99L, tracker.getQueryCount("orders", "amount"));
+
+        // 5. Reset column usage
         ResponseEntity<Void> resetRes = controllerWithTracker.resetColumnUsage();
         assertEquals(HttpStatus.OK, resetRes.getStatusCode());
         assertEquals(0L, tracker.getQueryCount("users", "email"));

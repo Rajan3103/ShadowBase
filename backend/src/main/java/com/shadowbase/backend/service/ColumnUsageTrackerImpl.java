@@ -7,11 +7,14 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeSet;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+
+import jakarta.annotation.PostConstruct;
 
 import net.sf.jsqlparser.expression.Expression;
 import net.sf.jsqlparser.expression.ExpressionVisitorAdapter;
@@ -40,13 +43,41 @@ import lombok.extern.slf4j.Slf4j;
 public class ColumnUsageTrackerImpl implements ColumnUsageTracker {
 
     private final int defaultThreshold;
+    private final boolean seedDemoStats;
 
     // Key format: "table_name.column_name" (normalized to lowercase)
     private final ConcurrentHashMap<String, AtomicLong> columnUsageStats = new ConcurrentHashMap<>();
 
+    public ColumnUsageTrackerImpl() {
+        this(10, false);
+    }
+
+    public ColumnUsageTrackerImpl(int defaultThreshold) {
+        this(defaultThreshold, false);
+    }
+
     public ColumnUsageTrackerImpl(
-            @Value("${shadowbase.analysis.heavy-query-threshold:10}") int defaultThreshold) {
+            @Value("${shadowbase.analysis.heavy-query-threshold:10}") int defaultThreshold,
+            @Value("${shadowbase.analysis.seed-demo-stats:false}") boolean seedDemoStats) {
         this.defaultThreshold = defaultThreshold;
+        this.seedDemoStats = seedDemoStats;
+    }
+
+    @PostConstruct
+    public void initDemoBaseline() {
+        if (seedDemoStats && columnUsageStats.isEmpty()) {
+            recordColumnAccess("customers", "id", 340L);
+            recordColumnAccess("customers", "name", 210L);
+            recordColumnAccess("customers", "email", 120L);
+            recordColumnAccess("customers", "phone", 45L);
+            recordColumnAccess("customers", "city", 12L);
+
+            recordColumnAccess("orders", "id", 500L);
+            recordColumnAccess("orders", "customer_id", 260L);
+            recordColumnAccess("orders", "amount", 90L);
+            recordColumnAccess("orders", "status", 75L);
+            log.info("Initialized baseline column query usage telemetry for demo tables.");
+        }
     }
 
     @Override
@@ -273,6 +304,48 @@ public class ColumnUsageTrackerImpl implements ColumnUsageTracker {
             }
         }
         return result;
+    }
+
+    @Override
+    public Set<String> getTrackedTables() {
+        Set<String> tables = new TreeSet<>();
+        for (String key : columnUsageStats.keySet()) {
+            int dot = key.indexOf('.');
+            if (dot > 0) {
+                tables.add(key.substring(0, dot));
+            }
+        }
+        return tables;
+    }
+
+    @Override
+    public Map<String, Map<String, Long>> getAllColumnUsage() {
+        Map<String, Map<String, Long>> result = new HashMap<>();
+        for (Map.Entry<String, AtomicLong> entry : columnUsageStats.entrySet()) {
+            int dot = entry.getKey().indexOf('.');
+            if (dot > 0 && dot < entry.getKey().length() - 1) {
+                String table = entry.getKey().substring(0, dot);
+                String column = entry.getKey().substring(dot + 1);
+                result.computeIfAbsent(table, k -> new HashMap<>())
+                        .put(column, entry.getValue().get());
+            }
+        }
+        return result;
+    }
+
+    @Override
+    public void recordBatchUsage(Map<String, Map<String, Long>> batchUsage) {
+        if (batchUsage == null) return;
+        for (Map.Entry<String, Map<String, Long>> tableEntry : batchUsage.entrySet()) {
+            String table = tableEntry.getKey();
+            if (tableEntry.getValue() != null) {
+                for (Map.Entry<String, Long> colEntry : tableEntry.getValue().entrySet()) {
+                    if (colEntry.getValue() != null && colEntry.getValue() > 0) {
+                        recordColumnAccess(table, colEntry.getKey(), colEntry.getValue());
+                    }
+                }
+            }
+        }
     }
 
     @Override

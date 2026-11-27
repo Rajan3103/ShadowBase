@@ -19,4 +19,9 @@ public class RecordMetricRequest {
     private String operation;
     private String sqlState;
     private String message;
+
+    /**
+     * Optional list of columns accessed during query execution or replay.
+     */
+    private java.util.List<String> columns;
 }

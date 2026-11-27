@@ -67,12 +67,22 @@ public class MetricsController {
     @PostMapping("/record")
     public ResponseEntity<MetricsSummaryResponse> recordMetric(@RequestBody RecordMetricRequest request) {
         if (request != null) {
-            metricsService.recordExecution(
-                    request.isSuccess(),
-                    request.getTable(),
-                    request.getOperation(),
-                    request.getSqlState(),
-                    request.getMessage());
+            if (request.getColumns() != null && !request.getColumns().isEmpty()) {
+                metricsService.recordExecution(
+                        request.isSuccess(),
+                        request.getTable(),
+                        request.getOperation(),
+                        request.getSqlState(),
+                        request.getMessage(),
+                        request.getColumns());
+            } else {
+                metricsService.recordExecution(
+                        request.isSuccess(),
+                        request.getTable(),
+                        request.getOperation(),
+                        request.getSqlState(),
+                        request.getMessage());
+            }
         }
         return new ResponseEntity<>(metricsService.getMetrics(), HttpStatus.CREATED);
     }
