@@ -24,5 +24,8 @@ public class MigrationAnalysisResponse {
     private boolean hasBreakingRisks;
 
     @Builder.Default
+    private int heavilyQueriedCount = 0;
+
+    @Builder.Default
     private List<MigrationFindingDto> findings = new ArrayList<>();
 }

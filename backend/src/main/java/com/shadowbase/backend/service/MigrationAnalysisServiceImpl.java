@@ -69,6 +69,7 @@ public class MigrationAnalysisServiceImpl implements MigrationAnalysisService {
                     .mediumRisks(0)
                     .lowRisks(0)
                     .hasBreakingRisks(false)
+                    .heavilyQueriedCount(0)
                     .findings(new ArrayList<>())
                     .build();
         }
@@ -190,12 +191,20 @@ public class MigrationAnalysisServiceImpl implements MigrationAnalysisService {
             }
         }
 
+        int heavilyQueriedCount = 0;
+        for (MigrationFindingDto finding : findings) {
+            if (finding.getRule() != null && finding.getRule().contains("HEAVILY_QUERIED")) {
+                heavilyQueriedCount++;
+            }
+        }
+
         return MigrationAnalysisResponse.builder()
                 .totalRisks(findings.size())
                 .highRisks(highCount)
                 .mediumRisks(mediumCount)
                 .lowRisks(lowCount)
                 .hasBreakingRisks(highCount > 0)
+                .heavilyQueriedCount(heavilyQueriedCount)
                 .findings(findings)
                 .build();
     }

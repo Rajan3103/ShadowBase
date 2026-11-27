@@ -108,6 +108,7 @@ class MigrationAnalysisServiceTest {
         MigrationAnalysisResponse res = serviceWithAst.analyzeMigration(new MigrationAnalysisRequest(sql));
 
         assertEquals(1, res.getHighRisks());
+        assertEquals(1, res.getHeavilyQueriedCount());
         assertTrue(res.isHasBreakingRisks());
         assertEquals("DROPPED_HEAVILY_QUERIED_COLUMN", res.getFindings().get(0).getRule());
         assertTrue(res.getFindings().get(0).getMessage().contains("30 recent queries"));
@@ -144,6 +145,7 @@ class MigrationAnalysisServiceTest {
         MigrationAnalysisResponse res = serviceWithAst.analyzeMigration(new MigrationAnalysisRequest(sql));
 
         assertEquals(1, res.getHighRisks());
+        assertEquals(1, res.getHeavilyQueriedCount());
         assertTrue(res.isHasBreakingRisks());
         assertEquals("RENAMED_HEAVILY_QUERIED_COLUMN", res.getFindings().get(0).getRule());
         assertTrue(res.getFindings().get(0).getMessage().contains("40 recent queries"));
